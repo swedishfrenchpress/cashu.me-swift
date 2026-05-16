@@ -48,24 +48,28 @@ struct CurrencyAmountDisplay: View {
                 .animation(.snappy, value: sats)
                 .animation(.snappy, value: effectivePrimary)
 
-            Button(action: flip) {
-                HStack(spacing: 6) {
-                    Text(secondaryText)
-                        .font(.subheadline.weight(.medium))
-                        .contentTransition(.numericText(value: Double(sats)))
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.caption.weight(.semibold))
+            // The secondary pill is only meaningful when fiat is available —
+            // otherwise there's no second unit to flip into, and we'd render
+            // a placeholder "$0.00" that fragments the eye.
+            if fiatAvailable {
+                Button(action: flip) {
+                    HStack(spacing: 6) {
+                        Text(secondaryText)
+                            .font(.subheadline.weight(.medium))
+                            .contentTransition(.numericText(value: Double(sats)))
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.thinMaterial, in: Capsule())
+                    .contentShape(Capsule())
                 }
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(.thinMaterial, in: Capsule())
-                .contentShape(Capsule())
+                .buttonStyle(.plain)
+                .accessibilityLabel("Flip primary currency")
+                .accessibilityHint("Currently showing \(primaryText), tap to switch to \(secondaryText)")
             }
-            .buttonStyle(.plain)
-            .disabled(!fiatAvailable)
-            .accessibilityLabel("Flip primary currency")
-            .accessibilityHint("Currently showing \(primaryText), tap to switch to \(secondaryText)")
         }
     }
 

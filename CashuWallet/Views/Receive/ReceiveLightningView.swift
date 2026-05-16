@@ -45,11 +45,14 @@ struct ReceiveLightningView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let quote = mintQuote {
+                if isPaid, let quote = mintQuote {
+                    paymentReceivedSplash(quote: quote)
+                        .transition(.scale(scale: 0.94).combined(with: .opacity))
+                } else if let quote = mintQuote {
                     requestDisplayView(quote: quote)
                         .transition(.asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
-                            removal: .move(edge: .trailing).combined(with: .opacity)
+                            removal: .opacity
                         ))
                 } else {
                     amountInputView
@@ -60,18 +63,23 @@ struct ReceiveLightningView: View {
                 }
             }
             .animation(.snappy(duration: 0.35), value: mintQuote != nil)
+            .animation(.spring(response: 0.5, dampingFraction: 0.7), value: isPaid)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.thinMaterial, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
+                if !isPaid {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(action: { dismiss() }) {
+                            Image(systemName: "xmark")
+                        }
+                        .accessibilityLabel("Close")
                     }
-                    .accessibilityLabel("Close")
-                }
 
-                ToolbarItem(placement: .principal) {
-                    Text(screenTitle)
-                        .font(.headline)
+                    ToolbarItem(placement: .principal) {
+                        Text(screenTitle)
+                            .font(.headline)
+                    }
                 }
             }
             .sheet(isPresented: $showMintPicker) {
@@ -336,11 +344,19 @@ struct ReceiveLightningView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 20) {
-                    QRCodeView(content: quote.request)
+                    QRCodeView(content: quote.request, showControls: false, staticOnly: true)
                         .frame(width: 280, height: 280)
                         .padding(16)
                         .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
                         .padding(.top, 8)
+                        .contextMenu {
+                            Button(action: { copyRequest(quote.request) }) {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
+                            ShareLink(item: quote.request) {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                            }
+                        }
 
                     amountSummary(for: quote)
 
@@ -380,10 +396,27 @@ struct ReceiveLightningView: View {
                 }
             }
 
-            Button(action: { copyRequest(quote.request) }) {
-                Label(copyButtonTitle(for: quote), systemImage: copiedRequest ? "checkmark" : "doc.on.doc")
+            HStack(spacing: 10) {
+                ShareLink(item: quote.request) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 52, height: 52)
+                        .background(.thinMaterial, in: Capsule())
+                        .foregroundStyle(.primary)
+                }
+                .accessibilityLabel("Share invoice")
+
+                Button(action: { copyRequest(quote.request) }) {
+                    Label(copyButtonTitle(for: quote), systemImage: copiedRequest ? "checkmark" : "doc.on.doc")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .tint(.accentColor)
             }
-            .glassButton()
             .padding(.horizontal)
             .padding(.bottom, 16)
         }
@@ -394,26 +427,58 @@ struct ReceiveLightningView: View {
     }
 
     private func amountSummary(for quote: MintQuoteInfo) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             if let amount = quote.amount {
+                // Smaller than the QR — the QR is the focal element on this
+                // screen; the amount confirms it.
                 CurrencyAmountDisplay(
                     sats: amount,
                     primary: $settings.amountDisplayPrimary,
-                    primarySize: 40
+                    primarySize: 32
                 )
                 .accessibilityLabel("Request amount: \(amount) sats")
             } else {
                 Text("Amount set by sender")
-                    .font(.title3.weight(.semibold))
+                    .font(.headline)
                     .multilineTextAlignment(.center)
             }
-
-            Text(quote.paymentMethod.requestDisplayName)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .tracking(0.5)
         }
+    }
+
+    // MARK: - Payment Received Splash
+
+    private func paymentReceivedSplash(quote: MintQuoteInfo) -> some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 96))
+                .foregroundStyle(.green)
+                .symbolEffect(.bounce, value: isPaid)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 4) {
+                Text("Received")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                if let amount = quote.amount {
+                    CurrencyAmountDisplay(
+                        sats: amount,
+                        primary: $settings.amountDisplayPrimary,
+                        primarySize: 56
+                    )
+                }
+            }
+
+            Spacer()
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            quote.amount.map { "Received \($0) sats" } ?? "Payment received"
+        )
     }
 
     // MARK: - Detail Row
@@ -542,10 +607,22 @@ struct ReceiveLightningView: View {
     }
 
     private func formatTimeRemaining(_ seconds: TimeInterval) -> String {
-        if seconds <= 0 { return "0:00" }
-        let minutes = Int(seconds) / 60
-        let secs = Int(seconds) % 60
-        return minutes > 0 ? String(format: "%d:%02d", minutes, secs) : String(format: "0:%02d", secs)
+        guard seconds > 0 else { return "Expired" }
+        let total = Int(seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let secs = total % 60
+
+        if hours >= 1 {
+            // 23h 59m — under-an-hour precision isn't useful at this scale
+            return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+        }
+        if minutes >= 1 {
+            // 12m 30s — seconds matter once we're under the hour
+            return "\(minutes)m \(secs)s"
+        }
+        // Sub-minute, urgency: just seconds
+        return "\(secs)s"
     }
 
     private func quoteStateText(for quote: MintQuoteInfo) -> String {
