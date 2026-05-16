@@ -140,6 +140,17 @@ struct ReceiveEcashView: View {
                                 .allowsHitTesting(false)
                         }
                     }
+                    .mask(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .black, location: 0.78),
+                                .init(color: .clear, location: 1.0),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
 
                     // Smart corner icon: paste when empty, clear when full.
                     // Plain SF Symbol (no circle bg) so we don't stack a
