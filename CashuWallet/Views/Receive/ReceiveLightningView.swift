@@ -45,10 +45,7 @@ struct ReceiveLightningView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if isPaid, let quote = mintQuote {
-                    paymentReceivedSplash(quote: quote)
-                        .transition(.scale(scale: 0.7).combined(with: .opacity))
-                } else if let quote = mintQuote {
+                if let quote = mintQuote {
                     requestDisplayView(quote: quote)
                         .transition(.asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
@@ -63,7 +60,6 @@ struct ReceiveLightningView: View {
                 }
             }
             .animation(.snappy(duration: 0.35), value: mintQuote != nil)
-            .animation(.spring(response: 0.55, dampingFraction: 0.72), value: isPaid)
             .navigationBarTitleDisplayMode(.inline)
             // No nav bar chrome — the title + close button float over the
             // black canvas. This kills the secondary gray bar the user was
@@ -71,20 +67,34 @@ struct ReceiveLightningView: View {
             // padding to clear the safe-area inset so nothing overlaps.
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
-                if !isPaid {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button(action: { dismiss() }) {
-                            Image(systemName: "xmark")
-                        }
-                        .accessibilityLabel("Close")
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
                     }
+                    .accessibilityLabel("Close")
+                }
 
-                    ToolbarItem(placement: .principal) {
-                        Text(screenTitle)
-                            .font(.headline)
-                    }
+                ToolbarItem(placement: .principal) {
+                    Text(screenTitle)
+                        .font(.headline)
                 }
             }
+            // Success splash lives on an overlay so its entrance doesn't
+            // fight the body's transition system. Without this, the splash
+            // appeared for a fraction of a second and slid off with the
+            // sheet dismiss.
+            .overlay {
+                if isPaid, let amount = mintQuote?.amount {
+                    PaymentSuccessSplash(
+                        title: "Received",
+                        amountSats: amount,
+                        onDone: { dismiss() }
+                    )
+                    .transition(.opacity)
+                    .zIndex(1)
+                }
+            }
+            .animation(.easeOut(duration: 0.25), value: isPaid)
             .sheet(isPresented: $showMintPicker) {
                 MintSelectorSheet(selectedMint: $walletManager.activeMint)
                     .environmentObject(walletManager)
@@ -449,44 +459,6 @@ struct ReceiveLightningView: View {
                     .multilineTextAlignment(.center)
             }
         }
-    }
-
-    // MARK: - Payment Received Splash
-
-    private func paymentReceivedSplash(quote: MintQuoteInfo) -> some View {
-        VStack(spacing: 28) {
-            Spacer()
-
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 120, weight: .semibold))
-                .foregroundStyle(.green)
-                .symbolEffect(.bounce.up.byLayer, options: .repeat(2), value: isPaid)
-                .accessibilityHidden(true)
-
-            VStack(spacing: 8) {
-                Text("Received")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .tracking(1.2)
-
-                if let amount = quote.amount {
-                    CurrencyAmountDisplay(
-                        sats: amount,
-                        primary: $settings.amountDisplayPrimary,
-                        primarySize: 64
-                    )
-                }
-            }
-
-            Spacer()
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            quote.amount.map { "Received \($0) sats" } ?? "Payment received"
-        )
     }
 
     // MARK: - Detail Row
@@ -922,10 +894,11 @@ struct ReceiveLightningView: View {
             await walletManager.loadTransactions()
         }
 
-        // Longer dwell so the success splash actually registers as a moment
-        // (entrance spring eats ~0.55s, then user has ~3s of clear splash).
-        try? await Task.sleep(nanoseconds: 3_500_000_000)
-        dismiss()
+        // Auto-dismiss fallback for the splash. The splash has its own Done
+        // button so users can skip ahead; this is just to make sure we don't
+        // strand them if they walk away from the device.
+        try? await Task.sleep(nanoseconds: 5_000_000_000)
+        if isPaid { dismiss() }
     }
 
     private func isAlreadyIssuedMintError(_ error: Error) -> Bool {

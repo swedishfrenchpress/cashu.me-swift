@@ -45,6 +45,9 @@ struct SendView: View {
             }
             .animation(.snappy(duration: 0.35), value: generatedToken != nil)
             .navigationBarTitleDisplayMode(.inline)
+            // Match the Lightning Invoice screen: float the title + chrome
+            // over the black canvas, no secondary gray strip.
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(action: { dismiss() }) {
@@ -99,6 +102,21 @@ struct SendView: View {
                     CashuTokenShareSheet(token: token)
                 }
             }
+            // Claimed splash overlays the entire screen when the recipient
+            // redeems the token. Overlay (not body branch) so the entrance
+            // doesn't fight the rest of the view's transitions.
+            .overlay {
+                if tokenClaimed, generatedToken != nil {
+                    PaymentSuccessSplash(
+                        title: "Claimed",
+                        amountSats: UInt64(amountString) ?? 0,
+                        onDone: { dismiss() }
+                    )
+                    .transition(.opacity)
+                    .zIndex(1)
+                }
+            }
+            .animation(.easeOut(duration: 0.25), value: tokenClaimed)
             .onDisappear {
                 checkingTask?.cancel()
             }
@@ -258,33 +276,28 @@ struct SendView: View {
     private func tokenDisplayView(token: String) -> some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(spacing: 20) {
-                    // QR Code
-                    QRCodeView(content: token)
+                VStack(spacing: 24) {
+                    // QR Code — same dimensions and corner radius as the
+                    // Lightning Invoice screen for visual consistency.
+                    // Cashu tokens often exceed a single QR's capacity so
+                    // UR encoding stays on, but the SPEED/SIZE dev HUD is
+                    // suppressed from production.
+                    QRCodeView(content: token, showControls: false)
                         .frame(width: 280, height: 280)
                         .padding(16)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16))
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 20))
                         .padding(.top, 8)
 
                     // Amount
                     CurrencyAmountDisplay(
                         sats: UInt64(amountString) ?? 0,
                         primary: $settings.amountDisplayPrimary,
-                        primarySize: 36
+                        primarySize: 32
                     )
 
                     // Status
                     Group {
-                        if tokenClaimed {
-                            HStack(spacing: 6) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .symbolEffect(.bounce, value: tokenClaimed)
-                                Text("Claimed")
-                            }
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.green)
-                            .transition(.scale.combined(with: .opacity))
-                        } else if isCheckingClaim {
+                        if isCheckingClaim {
                             HStack(spacing: 6) {
                                 ProgressView().scaleEffect(0.8)
                                 Text("Checking...")
@@ -303,30 +316,40 @@ struct SendView: View {
                             .transition(.opacity)
                         }
                     }
-                    .animation(.spring(response: 0.5, dampingFraction: 0.7), value: tokenClaimed)
                     .animation(.easeInOut(duration: 0.2), value: isCheckingClaim)
 
-                    // Details
-                    VStack(spacing: 12) {
+                    // Detail rows on canvas with hairline dividers — same
+                    // pattern as the Lightning Invoice screen.
+                    VStack(spacing: 0) {
                         detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: "\(tokenFee) sat")
+                        canvasDivider
                         detailRow(icon: "banknote", label: "Unit", value: settings.unitLabel.uppercased())
+                        canvasDivider
                         detailRow(icon: "banknote", label: "Fiat",
                                   value: priceService.btcPriceUSD > 0
-                                      ? priceService.formatSatsAsFiat(UInt64(amountString) ?? 0) : "$0.00")
+                                      ? priceService.formatSatsAsFiat(UInt64(amountString) ?? 0) : "—")
                         if let mint = walletManager.activeMint {
+                            canvasDivider
                             detailRow(icon: "bitcoinsign.bank.building", label: "Mint",
                                       value: extractMintHost(mint.url))
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.horizontal, 4)
                 }
+                .padding(.horizontal)
             }
 
-            // Copy button
+            // White inverted-fill Copy pill — matches Lightning Invoice.
             Button(action: { copyToken(token) }) {
                 Label(copyButtonText, systemImage: copyButtonText == "Copied" ? "checkmark" : "doc.on.doc")
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color.primary, in: Capsule())
+                    .foregroundStyle(Color(.systemBackground))
             }
-            .glassButton()
+            .buttonStyle(.plain)
             .padding(.horizontal)
             .padding(.bottom, 16)
         }
@@ -341,9 +364,21 @@ struct SendView: View {
             Label(label, systemImage: icon)
                 .foregroundStyle(.secondary)
             Spacer()
-            Text(value).fontWeight(.medium)
+            Text(value)
+                .fontWeight(.medium)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
         .font(.subheadline)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 14)
+    }
+
+    private var canvasDivider: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.08))
+            .frame(height: 0.5)
+            .padding(.leading, 28)
     }
 
     private func formatBalance(_ sats: UInt64) -> String {
@@ -453,9 +488,11 @@ struct SendView: View {
                     await walletManager.markTokenAsClaimed(token: token)
 
                     await MainActor.run {
-                        // Auto-dismiss after 2 seconds
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            dismiss()
+                        // Auto-dismiss fallback. The Claimed splash has its
+                        // own Done button so users can skip; this is a
+                        // safety net if they walk away from the device.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                            if tokenClaimed { dismiss() }
                         }
                     }
                     break
@@ -485,8 +522,8 @@ struct SendView: View {
             }
             await walletManager.markTokenAsClaimed(token: token)
             await MainActor.run {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    if tokenClaimed { dismiss() }
                 }
             }
         }
