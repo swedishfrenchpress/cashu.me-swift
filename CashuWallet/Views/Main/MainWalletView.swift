@@ -370,19 +370,43 @@ private struct WalletActionSheetView: View {
     let onScan: () -> Void
     let onSelect: (WalletFlow) -> Void
 
+    @State private var revealed = false
+
     private var secondaryOptionTitle: String {
         // Lightning + on-chain are both "Bitcoin" from the user's mental model;
         // the protocol choice happens inside the flow itself.
         "Bitcoin"
     }
 
+    private struct Option: Identifiable {
+        let id = UUID()
+        let title: String
+        let icon: String
+        let flow: WalletFlow
+    }
+
+    private var options: [Option] {
+        var result: [Option] = [
+            .init(title: "Ecash", icon: "banknote", flow: action.primaryOption),
+            .init(title: secondaryOptionTitle, icon: "bitcoinsign.circle.fill", flow: action.secondaryOption),
+        ]
+        if action == .send, NFCNDEFReaderSession.readingAvailable {
+            result.append(.init(title: "Contactless", icon: "wave.3.right.circle.fill", flow: .contactlessPay))
+        }
+        return result
+    }
+
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 0) {
-                optionButton(title: "Ecash", icon: "banknote", action: action.primaryOption)
-                optionButton(title: secondaryOptionTitle, icon: "bitcoinsign.circle.fill", action: action.secondaryOption)
-                if action == .send, NFCNDEFReaderSession.readingAvailable {
-                    optionButton(title: "Contactless", icon: "wave.3.right.circle.fill", action: .contactlessPay)
+                ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
+                    optionButton(title: option.title, icon: option.icon, action: option.flow)
+                        .opacity(revealed ? 1 : 0)
+                        .offset(x: revealed ? 0 : -12)
+                        .animation(
+                            .smooth(duration: 0.32).delay(Double(index) * 0.07),
+                            value: revealed
+                        )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -407,6 +431,7 @@ private struct WalletActionSheetView: View {
                 }
             }
         }
+        .onAppear { revealed = true }
     }
 
     private func optionButton(title: String, icon: String, action flow: WalletFlow) -> some View {
@@ -416,7 +441,7 @@ private struct WalletActionSheetView: View {
         } label: {
             optionLabel(title: title, icon: icon)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
     }
 
     private func optionLabel(title: String, icon: String) -> some View {

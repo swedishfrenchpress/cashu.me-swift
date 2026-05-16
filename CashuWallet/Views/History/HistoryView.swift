@@ -22,10 +22,15 @@ struct HistoryView: View {
     @State private var selectedTransaction: WalletTransaction?
     @State private var isCheckingStatus: String? = nil
     @State private var transactionUpdateRevision = 0
+    @State private var hasAppearedOnce = false
 
     // Pagination — kept for now (visual polish only; structural overhaul deferred)
     @State private var currentPage: Int = 1
     private let pageSize: Int = 10
+
+    // Cap stagger so a full page enters in ~300ms regardless of row count.
+    private let maxStaggerIndex = 8
+    private let staggerDelay: Double = 0.035
 
     var body: some View {
         NavigationStack {
@@ -80,13 +85,13 @@ struct HistoryView: View {
     private var historyList: some View {
         ScrollView {
             LazyVStack(spacing: 0, pinnedViews: []) {
-                ForEach(groupedSections, id: \.title) { group in
-                    sectionHeader(group.title)
+                ForEach(sectionsWithOffsets, id: \.group.title) { entry in
+                    sectionHeader(entry.group.title)
 
                     VStack(spacing: 0) {
-                        ForEach(Array(group.transactions.enumerated()), id: \.element.id) { index, transaction in
-                            transactionRow(transaction: transaction)
-                            if index < group.transactions.count - 1 {
+                        ForEach(Array(entry.group.transactions.enumerated()), id: \.element.id) { index, transaction in
+                            transactionRow(transaction: transaction, staggerIndex: entry.startIndex + index)
+                            if index < entry.group.transactions.count - 1 {
                                 CanvasDivider()
                             }
                         }
@@ -110,6 +115,24 @@ struct HistoryView: View {
             await walletManager.syncPendingMintQuotes()
             await walletManager.checkAllPendingTokens()
         }
+        .onAppear { hasAppearedOnce = true }
+    }
+
+    private struct SectionWithOffset {
+        let group: TransactionGroup
+        let startIndex: Int
+    }
+
+    /// groupedSections paired with a running row offset, so each row can be
+    /// assigned a continuous "global index" for the entrance stagger.
+    private var sectionsWithOffsets: [SectionWithOffset] {
+        var result: [SectionWithOffset] = []
+        var offset = 0
+        for g in groupedSections {
+            result.append(.init(group: g, startIndex: offset))
+            offset += g.transactions.count
+        }
+        return result
     }
 
     private func sectionHeader(_ title: String) -> some View {
@@ -217,8 +240,10 @@ struct HistoryView: View {
 
     // MARK: - Transaction Row
 
-    private func transactionRow(transaction: WalletTransaction) -> some View {
-        Button {
+    private func transactionRow(transaction: WalletTransaction, staggerIndex: Int) -> some View {
+        let clampedIndex = min(staggerIndex, maxStaggerIndex)
+        let delay = Double(clampedIndex) * staggerDelay
+        return Button {
             HapticFeedback.selection()
             selectedTransaction = transaction
         } label: {
@@ -265,7 +290,10 @@ struct HistoryView: View {
             .padding(.vertical, 14)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle())
+        .opacity(hasAppearedOnce ? 1 : 0)
+        .offset(y: hasAppearedOnce ? 0 : 6)
+        .animation(.smooth(duration: 0.32).delay(delay), value: hasAppearedOnce)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(rowTitle(for: transaction)), \(formatAmount(transaction)) sats, \(transaction.status == .pending ? transaction.displayStatusText.lowercased() : "completed"), \(formatRelativeDate(transaction.date))")
         .accessibilityHint("Opens transaction details")
@@ -286,6 +314,9 @@ struct HistoryView: View {
                 .foregroundStyle(badgeColor(for: transaction))
                 .background(Color(.systemBackground), in: Circle())
                 .offset(x: 4, y: 4)
+                .contentTransition(.symbolEffect(.replace.downUp))
+                .animation(.snappy(duration: 0.28), value: transaction.status)
+                .animation(.snappy(duration: 0.28), value: transaction.type)
                 .accessibilityHidden(true)
         }
     }
