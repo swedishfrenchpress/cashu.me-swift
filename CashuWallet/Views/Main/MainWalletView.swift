@@ -47,6 +47,15 @@ struct MainWalletView: View {
             .sheet(item: $activeSheet) { sheet in
                 sheetView(for: sheet)
             }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { activeSheet = .scanner } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                    }
+                    .accessibilityLabel("Scan QR code")
+                    .accessibilityHint("Opens the camera to scan a payment QR code")
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .cashuTokenReceived)) { notification in
             if let userInfo = notification.userInfo,
@@ -103,11 +112,23 @@ struct MainWalletView: View {
                 }
             }
 
-            // Mint info
+            // Wallet identity: mint + Lightning address when configured,
+            // honest "no mint connected" hint when not.
             if let mint = walletManager.activeMint {
-                Text(mint.name)
+                VStack(spacing: 8) {
+                    Text(mint.name)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    if !npcService.lightningAddress.isEmpty {
+                        lightningAddressBadge
+                    }
+                }
+            } else {
+                Text("No mint connected")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .accessibilityHint("Open the Mints tab to add a mint")
             }
 
             // Status badges
@@ -173,14 +194,6 @@ struct MainWalletView: View {
                     .liquidGlass(in: Capsule(), interactive: true)
             }
             .accessibilityHint("Opens options to receive ecash or lightning payments")
-
-            Button { activeSheet = .scanner } label: {
-                Image(systemName: "viewfinder")
-                    .font(.title3)
-                    .padding(18)
-                    .liquidGlass(in: Circle(), interactive: true)
-            }
-            .accessibilityLabel("Scan QR code")
 
             Button { activeSheet = .chooser(.send) } label: {
                 Text("Send")
