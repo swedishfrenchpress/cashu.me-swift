@@ -456,10 +456,6 @@ private struct WalletActionSheetView: View {
                 .font(.title3.weight(.medium))
 
             Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 14)
