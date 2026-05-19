@@ -569,6 +569,7 @@ struct MeltView: View {
 
     // Inline scan + clipboard suggestion
     @State private var showingScanner = false
+    @State private var showingMintPicker = false
     @State private var clipboardSuggestion: PaymentRequestDecodeResult?
     @State private var clipboardSuggestionRaw: String?
     @State private var dismissedClipboardSuggestion = false
@@ -656,6 +657,11 @@ struct MeltView: View {
             .sheet(isPresented: $showingScanner) {
                 ScannerWrapperView(onScanned: handleScannedRequest)
                     .environmentObject(walletManager)
+            }
+            .sheet(isPresented: $showingMintPicker) {
+                MintSelectorSheet(selectedMint: $walletManager.activeMint)
+                    .environmentObject(walletManager)
+                    .presentationDetents([.medium])
             }
             .onAppear {
                 syncMeltModeWithActiveMint()
@@ -868,6 +874,8 @@ struct MeltView: View {
             return amount.map { "BOLT12 offer — \($0) sat" } ?? "BOLT12 offer — set amount"
         case .onchain:
             return "Bitcoin address"
+        case .cashuPaymentRequest:
+            return "Cashu payment request"
         case .unrecognized:
             return "Unrecognized — try a Lightning address, invoice, or Bitcoin address"
         }
@@ -941,33 +949,46 @@ struct MeltView: View {
     }
 
     private func meltMintSelector(mint: MintInfo) -> some View {
-        HStack(spacing: 12) {
-            if let iconUrl = mint.iconUrl, let url = URL(string: iconUrl) {
-                AsyncImage(url: url) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Image(systemName: "bitcoinsign.bank.building").foregroundStyle(.secondary)
-                }
-                .frame(width: 40, height: 40)
-                .clipShape(Circle())
-            } else {
-                Image(systemName: "bitcoinsign.bank.building")
-                    .foregroundStyle(.secondary)
+        Button(action: {
+            HapticFeedback.selection()
+            showingMintPicker = true
+        }) {
+            HStack(spacing: 12) {
+                if let iconUrl = mint.iconUrl, let url = URL(string: iconUrl) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Image(systemName: "bitcoinsign.bank.building").foregroundStyle(.secondary)
+                    }
                     .frame(width: 40, height: 40)
-            }
+                    .clipShape(Circle())
+                } else {
+                    Image(systemName: "bitcoinsign.bank.building")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40, height: 40)
+                }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(mint.name)
-                    .font(.subheadline.weight(.medium))
-                Text("\(mint.balance) sat")
-                    .font(.caption)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(mint.name)
+                        .font(.subheadline.weight(.medium))
+                    Text("\(mint.balance) sat")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-
-            Spacer()
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .padding(12)
         .liquidGlass(in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityLabel("Paying mint: \(mint.name), \(mint.balance) sats")
+        .accessibilityHint("Double-tap to choose the mint to pay from")
     }
 
     private func quoteConfirmView(quote: MeltQuoteInfo) -> some View {
@@ -993,9 +1014,9 @@ struct MeltView: View {
                         meltDetailRow(label: "Amount", value: "\(quote.amount) sat")
                         Divider().padding(.leading)
                         meltDetailRow(label: "Fee", value: "\(quote.feeReserve) sat")
-                        if let mint = walletManager.activeMint {
+                        if let mintUrl = quote.mintUrl ?? walletManager.activeMint?.url {
                             Divider().padding(.leading)
-                            meltDetailRow(label: "Mint", value: URL(string: mint.url)?.host ?? mint.url)
+                            meltDetailRow(label: "Mint", value: URL(string: mintUrl)?.host ?? mintUrl)
                         }
                     }
                     .padding(.vertical, 4)
@@ -1120,8 +1141,9 @@ struct MeltView: View {
         case .onchain:
             requestInput = PaymentRequestParser.normalizeBitcoinRequest(raw)
         case .bolt11, .bolt12:
-            requestInput = PaymentRequestParser.normalizeLightningRequest(raw)
-        default:
+            requestInput = PaymentRequestDecoder.encodedLightningRequest(from: raw)
+                ?? PaymentRequestParser.normalizeLightningRequest(raw)
+        case .lightningAddress, .cashuPaymentRequest, .unrecognized:
             requestInput = raw
         }
 
@@ -1149,8 +1171,9 @@ struct MeltView: View {
         case .onchain:
             requestInput = PaymentRequestParser.normalizeBitcoinRequest(recipient.invoice)
         case .bolt11, .bolt12:
-            requestInput = PaymentRequestParser.normalizeLightningRequest(recipient.invoice)
-        default:
+            requestInput = PaymentRequestDecoder.encodedLightningRequest(from: recipient.invoice)
+                ?? PaymentRequestParser.normalizeLightningRequest(recipient.invoice)
+        case .lightningAddress, .cashuPaymentRequest, .unrecognized:
             requestInput = recipient.invoice
         }
         errorMessage = nil
@@ -1185,7 +1208,8 @@ struct MeltView: View {
                             amount: amount
                         )
                     } else {
-                        meltQuote = try await walletManager.createMeltQuote(request: trimmedInput)
+                        let request = PaymentRequestDecoder.encodedLightningRequest(from: trimmedInput) ?? trimmedInput
+                        meltQuote = try await walletManager.createMeltQuote(request: request)
                     }
                 case .onchain:
                     guard let amount = UInt64(amountString), amount > 0 else { return }
