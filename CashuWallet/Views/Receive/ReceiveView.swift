@@ -112,14 +112,33 @@ struct ReceiveEcashView: View {
     @EnvironmentObject var walletManager: WalletManager
     @ObservedObject private var settings = SettingsManager.shared
 
+    var sheetDetent: Binding<PresentationDetent>? = nil
+
     @State private var tokenInput = ""
     @State private var errorMessage: String?
     @State private var navigateToDetail = false
     @State private var validatedToken: String?
+    @State private var currentRequest: CashuRequest?
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
+            ZStack {
+                if let request = currentRequest {
+                    CashuRequestDetailView(request: request, onClose: { dismiss() })
+                        .environmentObject(walletManager)
+                        .transition(.opacity)
+                } else {
+                    formContent
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.25), value: currentRequest?.id)
+        }
+    }
+
+    @ViewBuilder
+    private var formContent: some View {
+        VStack(spacing: 16) {
                 ZStack(alignment: .bottomTrailing) {
                     ZStack(alignment: .topLeading) {
                         TextEditor(text: $tokenInput)
@@ -180,15 +199,23 @@ struct ReceiveEcashView: View {
                         .transition(.opacity.combined(with: .scale))
                 }
 
-                Button(action: validateAndContinue) {
-                    Text("Continue")
+                VStack(spacing: 10) {
+                    Button(action: validateAndContinue) {
+                        Text("Continue")
+                    }
+                    .glassButton()
+                    .disabled(tokenInput.isEmpty)
+                    .animation(.easeOut(duration: 0.2), value: tokenInput.isEmpty)
+                    .accessibilityHint("Validates the token and proceeds to details")
+
+                    Button(action: createNewRequest) {
+                        Text("New Request")
+                    }
+                    .glassButton()
+                    .accessibilityHint("Generate a Cashu Request to receive ecash")
                 }
-                .glassButton()
-                .disabled(tokenInput.isEmpty)
-                .animation(.easeOut(duration: 0.2), value: tokenInput.isEmpty)
                 .padding(.horizontal)
                 .padding(.bottom, 16)
-                .accessibilityHint("Validates the token and proceeds to details")
             }
             .animation(.easeInOut(duration: 0.2), value: errorMessage)
             .navigationTitle("Receive Ecash")
@@ -217,7 +244,6 @@ struct ReceiveEcashView: View {
                       TokenParser.isCashuToken(clipboardContent) else { return }
                 tokenInput = clipboardContent
             }
-        }
     }
 
     private func pasteFromClipboard() {
@@ -231,6 +257,38 @@ struct ReceiveEcashView: View {
         HapticFeedback.selection()
         tokenInput = ""
         errorMessage = nil
+    }
+
+    private func createNewRequest() {
+        HapticFeedback.selection()
+        let nostr = NostrService.shared
+        guard nostr.isInitialized, !nostr.publicKeyHex.isEmpty else {
+            errorMessage = "Nostr identity not initialized"
+            return
+        }
+        let id = CashuRequest.newId()
+        do {
+            let encoded = try PaymentRequestBuilder.build(
+                id: id,
+                amount: nil,
+                unit: "sat",
+                mints: [],
+                description: nil,
+                nostrPubkeyHex: nostr.publicKeyHex,
+                relays: SettingsManager.shared.nostrRelays
+            )
+            let request = CashuRequestStore.shared.createNew(
+                amount: nil,
+                unit: "sat",
+                mints: [],
+                memo: nil,
+                encoded: encoded
+            )
+            sheetDetent?.wrappedValue = .large
+            currentRequest = request
+        } catch {
+            errorMessage = "Could not build request: \(error)"
+        }
     }
 
     private func validateAndContinue() {
