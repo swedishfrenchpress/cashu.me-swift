@@ -61,7 +61,7 @@ struct HistoryView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if filteredTransactions.isEmpty && requestStore.requests.isEmpty {
+                if filteredItems.isEmpty && requestStore.requests.isEmpty {
                     emptyStateView
                 } else {
                     historyList
@@ -135,10 +135,11 @@ struct HistoryView: View {
     // MARK: - History List
 
     private var historyList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: []) {
-                if !requestStore.requests.isEmpty {
-                    sectionHeader("Cashu Requests")
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0, pinnedViews: []) {
+                    if !requestStore.requests.isEmpty {
+                        sectionHeader("Cashu Requests")
                     VStack(spacing: 0) {
                         ForEach(Array(requestStore.requests.enumerated()), id: \.element.id) { index, request in
                             cashuRequestRow(request: request)
@@ -181,12 +182,25 @@ struct HistoryView: View {
                     }
                 }
             }
+            }
         }
     }
 
     private func extendWindow() {
         guard visibleCount < filteredItems.count else { return }
         visibleCount = min(visibleCount + pageStep, filteredItems.count)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .tracking(1.2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
     }
 
     @ViewBuilder
@@ -270,9 +284,16 @@ struct HistoryView: View {
     /// These are suppressed from the timeline because the request row
     /// represents the same money event.
     private var requestClaimedTxIds: Set<String> {
-        Set(requestStore.requests.flatMap { req in
-            req.receivedPayments.map { $0.transactionId }
-        })
+        Set(requestStore.requests.flatMap { $0.receivedPaymentIds })
+    }
+
+    /// Sum of wallet-transaction amounts attached to this request.
+    private func totalReceived(for request: CashuRequest) -> UInt64 {
+        let ids = Set(request.receivedPaymentIds)
+        guard !ids.isEmpty else { return 0 }
+        return walletManager.transactions
+            .filter { ids.contains($0.id) }
+            .reduce(UInt64(0)) { $0 + $1.amount }
     }
 
     /// Surviving transactions (not claimed by any Cashu Request) merged with
@@ -303,8 +324,8 @@ struct HistoryView: View {
     private func matchesFilter(request: CashuRequest) -> Bool {
         switch filter {
         case .all:       return true
-        case .pending:   return request.receivedPayments.isEmpty
-        case .completed: return !request.receivedPayments.isEmpty
+        case .pending:   return request.receivedPaymentIds.isEmpty
+        case .completed: return !request.receivedPaymentIds.isEmpty
         }
     }
 
@@ -319,7 +340,8 @@ struct HistoryView: View {
         case .request(let req):
             if "cashu request".contains(query) { return true }
             if let amount = req.amount, "\(amount)".contains(query) { return true }
-            if req.totalReceived > 0, "\(req.totalReceived)".contains(query) { return true }
+            let received = totalReceived(for: req)
+            if received > 0, "\(received)".contains(query) { return true }
             return false
         }
     }
@@ -355,7 +377,7 @@ struct HistoryView: View {
     private func cashuRequestRow(request: CashuRequest, staggerIndex: Int) -> some View {
         let clampedIndex = min(staggerIndex, maxStaggerIndex)
         let delay = Double(clampedIndex) * staggerDelay
-        let isReceived = !request.receivedPayments.isEmpty
+        let isReceived = !request.receivedPaymentIds.isEmpty
         return Button {
             HapticFeedback.selection()
             selectedRequest = request
@@ -416,11 +438,12 @@ struct HistoryView: View {
     @ViewBuilder
     private func requestTrailingAmount(request: CashuRequest, received: Bool) -> some View {
         if received {
-            Text("+\(settings.formatAmountShort(request.totalReceived))")
+            let receivedAmount = totalReceived(for: request)
+            Text("+\(settings.formatAmountShort(receivedAmount))")
                 .font(.system(.body, design: .rounded).weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(Color.green)
-                .contentTransition(.numericText(value: Double(request.totalReceived)))
+                .contentTransition(.numericText(value: Double(receivedAmount)))
         } else if let amount = request.amount, amount > 0 {
             HStack(spacing: 4) {
                 Image(systemName: "clock")

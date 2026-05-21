@@ -149,7 +149,7 @@ enum NIP44 {
     private static func constantTimeEquals(_ a: Data, _ b: Data) -> Bool {
         guard a.count == b.count else { return false }
         var diff: UInt8 = 0
-        for i in 0..<a.count { diff |= a[i] ^ b[i] }
+        for (x, y) in zip(a, b) { diff |= x ^ y }
         return diff == 0
     }
 }

@@ -51,6 +51,12 @@ class CashuRequestStore: ObservableObject {
         requests.first(where: { $0.id == id })
     }
 
+    func delete(id: String) {
+        requests.removeAll { $0.id == id }
+        if currentRequestId == id { currentRequestId = nil }
+        persist()
+    }
+
     private func persist() {
         do {
             let data = try JSONEncoder().encode(requests)
