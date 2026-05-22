@@ -18,10 +18,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 
-/** Settings list row with optional leading icon, optional subtitle, trailing chevron. */
+/** Settings list row with optional leading icon, optional subtitle, trailing chevron.
+ *  Pass `tint = colorScheme.error` for destructive rows (matches iOS isDestructive). */
 @Composable
 fun NavRow(
     title: String,
@@ -30,7 +32,12 @@ fun NavRow(
     leadingIcon: ImageVector? = null,
     subtitle: String? = null,
     enabled: Boolean = true,
+    tint: Color? = null,
+    showChevron: Boolean = true,
 ) {
+    val titleColor = tint ?: MaterialTheme.colorScheme.onSurface
+    val iconColor = tint ?: MaterialTheme.colorScheme.onSurface
+    val chevronColor = tint ?: MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -42,7 +49,7 @@ fun NavRow(
             Icon(
                 imageVector = leadingIcon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = iconColor,
                 modifier = Modifier.size(20.dp),
             )
             Spacer(Modifier.width(16.dp))
@@ -51,7 +58,7 @@ fun NavRow(
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = titleColor,
             )
             if (subtitle != null) {
                 Text(
@@ -61,12 +68,14 @@ fun NavRow(
                 )
             }
         }
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
-        )
+        if (showChevron) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = chevronColor,
+                modifier = Modifier.size(20.dp),
+            )
+        }
     }
 }
 

@@ -12,9 +12,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -35,7 +46,6 @@ import androidx.compose.ui.unit.dp
 import org.cashu.wallet.BuildConfig
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.CanvasDivider
-import org.cashu.wallet.ui.components.DestructiveTextButton
 import org.cashu.wallet.ui.components.NavRow
 import org.cashu.wallet.ui.components.SectionHeader
 
@@ -63,10 +73,10 @@ fun SettingsScreen(
             .padding(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
-                title = { Text("Settings", style = MaterialTheme.typography.headlineMedium) },
+            CenterAlignedTopAppBar(
+                title = { Text("Settings") },
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.background,
                 ),
@@ -80,33 +90,72 @@ fun SettingsScreen(
             contentPadding = PaddingValues(bottom = 32.dp),
         ) {
             item("backup-header") { SectionHeader("Backup") }
-            item("backup") { NavRow(title = "Backup & Restore", onClick = onOpenBackup) }
+            item("backup") {
+                NavRow(
+                    title = "Backup & Restore",
+                    leadingIcon = Icons.Outlined.VpnKey,
+                    onClick = onOpenBackup,
+                )
+            }
 
             item("payments-header") { SectionHeader("Payments") }
             item("lightning") {
-                NavRow(title = "Lightning", subtitle = "Lightning address", onClick = onOpenLightning)
+                NavRow(
+                    title = "Lightning",
+                    subtitle = "Lightning address",
+                    leadingIcon = Icons.Outlined.Bolt,
+                    onClick = onOpenLightning,
+                )
             }
             item("payments-divider") { CanvasDivider(leadingInset = 16) }
             item("p2pk") {
-                NavRow(title = "P2PK", subtitle = "Lock ecash to a key", onClick = onOpenP2PK)
+                NavRow(
+                    title = "P2PK",
+                    subtitle = "Lock ecash to a key",
+                    leadingIcon = Icons.Outlined.Lock,
+                    onClick = onOpenP2PK,
+                )
             }
 
             item("integrations-header") { SectionHeader("Integrations") }
-            item("nostr") { NavRow(title = "Nostr", onClick = onOpenNostr) }
+            item("nostr") {
+                NavRow(
+                    title = "Nostr",
+                    leadingIcon = Icons.Outlined.AccountCircle,
+                    onClick = onOpenNostr,
+                )
+            }
             item("integrations-divider") { CanvasDivider(leadingInset = 16) }
             item("nwc") {
-                NavRow(title = "Nostr Wallet Connect", onClick = onOpenNWC)
+                NavRow(
+                    title = "Nostr Wallet Connect",
+                    leadingIcon = Icons.Outlined.Link,
+                    onClick = onOpenNWC,
+                )
             }
 
             item("privacy-header") { SectionHeader("Privacy & Display") }
-            item("privacy") { NavRow(title = "Privacy", onClick = onOpenPrivacy) }
+            item("privacy") {
+                NavRow(
+                    title = "Privacy",
+                    leadingIcon = Icons.Outlined.VisibilityOff,
+                    onClick = onOpenPrivacy,
+                )
+            }
             item("privacy-divider") { CanvasDivider(leadingInset = 16) }
-            item("appearance") { NavRow(title = "Appearance", onClick = onOpenAppearance) }
+            item("appearance") {
+                NavRow(
+                    title = "Appearance",
+                    leadingIcon = Icons.Outlined.Palette,
+                    onClick = onOpenAppearance,
+                )
+            }
 
             item("about-header") { SectionHeader("About") }
             item("learn") {
                 NavRow(
                     title = "Learn about Cashu",
+                    leadingIcon = Icons.Outlined.Public,
                     onClick = { context.openExternal("https://cashu.space") },
                 )
             }
@@ -114,19 +163,20 @@ fun SettingsScreen(
             item("specs") {
                 NavRow(
                     title = "Protocol Specs (NUTs)",
+                    leadingIcon = Icons.Outlined.Description,
                     onClick = { context.openExternal("https://github.com/cashubtc/nuts") },
                 )
             }
 
             item("danger-header") { SectionHeader("Danger") }
             item("delete") {
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                    DestructiveTextButton(
-                        text = "Delete Wallet",
-                        onClick = { confirmDelete = true },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                NavRow(
+                    title = "Delete Wallet",
+                    leadingIcon = Icons.Outlined.DeleteOutline,
+                    onClick = { confirmDelete = true },
+                    tint = MaterialTheme.colorScheme.error,
+                    showChevron = false,
+                )
             }
 
             item("footer") {
