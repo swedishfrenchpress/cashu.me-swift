@@ -9,12 +9,19 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import org.cashu.wallet.App.AppContainer
 import org.cashu.wallet.Core.Platform.ConnectivityState
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import org.cashu.wallet.Views.History.HistoryView
-import org.cashu.wallet.Views.Mints.MintsListView
 import org.cashu.wallet.Views.Settings.SettingsView
 import org.cashu.wallet.ui.home.HomeScreen
 import org.cashu.wallet.ui.home.ReceiveAction
 import org.cashu.wallet.ui.home.SendAction
+import org.cashu.wallet.ui.mints.MintDetailScreen
+import org.cashu.wallet.ui.mints.MintDiscoveryScreen
+import org.cashu.wallet.ui.mints.MintsScreen
 import org.cashu.wallet.ui.receive.ReceiveEcashScreen
 import org.cashu.wallet.ui.receive.ReceiveLightningScreen
 import org.cashu.wallet.ui.send.SendEcashScreen
@@ -90,7 +97,32 @@ fun CashuNavHost(
                 onPrefilledConsumed = onPendingSendScanConsumed,
             )
         }
+        composable(Routes.MINT_DISCOVERY) {
+            MintDiscoveryScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                mintDiscoveryManager = container.mintDiscoveryManager,
+                onClose = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = Routes.MINT_DETAIL,
+            arguments = listOf(navArgument("mintUrl") { type = NavType.StringType }),
+        ) { entry ->
+            val encoded = entry.arguments?.getString("mintUrl").orEmpty()
+            val mintUrl = URLDecoder.decode(encoded, StandardCharsets.UTF_8.name())
+            MintDetailScreen(
+                walletManager = container.walletManager,
+                mintUrl = mintUrl,
+                onClose = { navController.popBackStack() },
+            )
+        }
     }
+}
+
+internal fun mintDetailRouteFor(mintUrl: String): String {
+    val encoded = URLEncoder.encode(mintUrl, StandardCharsets.UTF_8.name())
+    return Routes.MINT_DETAIL.replace("{mintUrl}", encoded)
 }
 
 private fun NavGraphBuilder.tabDestinations(
@@ -135,14 +167,15 @@ private fun NavGraphBuilder.tabDestinations(
         HistoryView(container.walletManager, contentPadding)
     }
     composable(Routes.MINTS) {
-        MintsListView(
+        MintsScreen(
             walletManager = container.walletManager,
             settingsManager = container.settingsManager,
-            mintDiscoveryManager = container.mintDiscoveryManager,
+            onOpenMint = { mint -> navController.navigate(mintDetailRouteFor(mint.url)) },
+            onOpenDiscovery = { navController.navigate(Routes.MINT_DISCOVERY) },
+            onScan = onScan,
             contentPadding = contentPadding,
             scannedMintUrl = pendingMintScan,
             onScannedMintUrlConsumed = onPendingMintScanConsumed,
-            onScan = onScan,
         )
     }
     composable(Routes.SETTINGS) {
