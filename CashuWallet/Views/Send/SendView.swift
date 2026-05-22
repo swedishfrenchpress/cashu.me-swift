@@ -927,7 +927,7 @@ struct MeltView: View {
 
                 HStack(spacing: 6) {
                     Button(action: openScanner) {
-                        Image(systemName: "qrcode.viewfinder")
+                        Image(systemName: "viewfinder")
                             .font(.title3)
                             .foregroundStyle(.primary)
                     }
