@@ -100,7 +100,7 @@ struct MintDiscoverySheet: View {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return discoveryManager.discoveredMints }
         return discoveryManager.discoveredMints.filter { mint in
-            (mint.name?.localizedCaseInsensitiveContains(query) ?? false)
+            mint.displayName.localizedCaseInsensitiveContains(query)
                 || mint.url.localizedCaseInsensitiveContains(query)
         }
     }
@@ -122,7 +122,7 @@ struct MintDiscoverySheet: View {
     private func addedRow(for mint: DiscoveredMint) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(mint.name ?? "Unknown Mint")
+                Text(mint.displayName)
                     .font(.body)
                 Text(mint.url)
                     .font(.caption)
@@ -146,7 +146,7 @@ struct MintDiscoverySheet: View {
     private func discoverableRow(for mint: DiscoveredMint) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(mint.name ?? "Unknown Mint")
+                Text(mint.displayName)
                     .font(.body)
                 Text(mint.url)
                     .font(.caption)
@@ -167,7 +167,7 @@ struct MintDiscoverySheet: View {
                     .font(.title3)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Add \(mint.name ?? "mint")")
+            .accessibilityLabel("Add \(mint.displayName)")
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)

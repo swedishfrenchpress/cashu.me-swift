@@ -94,7 +94,7 @@ struct MintDetailView: View {
             }
         }
         .task { await loadMintInfo() }
-        .confirmationDialog("Remove Mint", isPresented: $showRemoveConfirmation, titleVisibility: .visible) {
+        .alert("Remove Mint", isPresented: $showRemoveConfirmation) {
             Button("Remove", role: .destructive) { removeMint() }
             Button("Cancel", role: .cancel) {}
         } message: {
