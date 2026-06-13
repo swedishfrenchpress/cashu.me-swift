@@ -363,9 +363,21 @@ class TransactionService: ObservableObject {
                 continue
             }
 
-            let amount = quote.amount?.value
-                ?? (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
-                ?? (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
+            // BOLT12 offers are reusable and long-lived, so a created-but-unpaid
+            // offer must stay out of history entirely. Surface a BOLT12 quote
+            // only once a payment has actually arrived (amountPaid/amountIssued),
+            // ignoring the offer's nominal amount. Other methods keep showing
+            // their pending quote (e.g. an unpaid BOLT11 invoice you generated).
+            let amount: UInt64?
+            if paymentMethod == .bolt12 {
+                amount = quote.amountPaid.value > 0
+                    ? quote.amountPaid.value
+                    : (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
+            } else {
+                amount = quote.amount?.value
+                    ?? (quote.amountPaid.value > 0 ? quote.amountPaid.value : nil)
+                    ?? (quote.amountIssued.value > 0 ? quote.amountIssued.value : nil)
+            }
 
             guard let amount, amount > 0 else {
                 continue

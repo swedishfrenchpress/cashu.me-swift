@@ -35,7 +35,14 @@ class WalletManager: ObservableObject {
     @Published var activeUnit: String = "sat"
 
     private var mintQuoteSyncsInFlight: Set<String> = []
-    
+
+    /// Throttle state for passive mint-quote syncs (opening History, app
+    /// foreground). Collapses overlapping triggers and rate-limits how often
+    /// we re-poll the mint so reusable BOLT12 offers don't hammer it.
+    private var isSyncingMintQuotes = false
+    private var lastMintQuoteSyncAt: Date?
+    private let mintQuoteSyncCooldown: TimeInterval = 45
+
     // MARK: - Services
 
     private let walletStore = WalletStore()
@@ -1169,7 +1176,28 @@ class WalletManager: ObservableObject {
         await loadTransactions()
     }
 
+    /// Cooldown-gated sync for passive triggers (opening History, returning to
+    /// foreground). Skips when a sync ran within `mintQuoteSyncCooldown`, so a
+    /// paid offer settles on its own without re-polling the mint on every tab
+    /// switch. Pull-to-refresh calls `syncPendingMintQuotes()` directly to
+    /// bypass the cooldown (explicit user intent).
+    func syncPendingMintQuotesIfStale() async {
+        if let last = lastMintQuoteSyncAt,
+           Date().timeIntervalSince(last) < mintQuoteSyncCooldown {
+            return
+        }
+        await syncPendingMintQuotes()
+    }
+
     func syncPendingMintQuotes() async {
+        // Coarse in-flight guard: collapse overlapping triggers (e.g. opening
+        // History while a foreground sync is already running) into one pass so
+        // the full per-quote loop never runs twice concurrently.
+        guard !isSyncingMintQuotes else { return }
+        isSyncingMintQuotes = true
+        lastMintQuoteSyncAt = Date()
+        defer { isSyncingMintQuotes = false }
+
         guard let db else {
             await loadTransactions()
             return

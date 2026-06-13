@@ -89,7 +89,7 @@ struct HistoryView: View {
                     .accessibilityValue(filter.label)
                 }
             }
-            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search history")
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search history")
             .onChange(of: filter) { _, _ in
                 visibleCount = pageStep
                 scrollResetToken &+= 1
@@ -128,7 +128,11 @@ struct HistoryView: View {
                 Text("The QR and any pending payment routing stay valid; this only removes the row from your history.")
             }
             .task {
+                // Show the current ledger immediately, then quietly re-check
+                // pending mint quotes (throttled) so a paid BOLT12 offer lands
+                // in history just by opening the tab — no pull-to-refresh.
                 await walletManager.loadTransactions()
+                await walletManager.syncPendingMintQuotesIfStale()
             }
             .onReceive(NotificationCenter.default.publisher(for: .cashuTransactionsUpdated)) { _ in
                 transactionUpdateRevision += 1
@@ -141,30 +145,43 @@ struct HistoryView: View {
 
     private var historyList: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 0, pinnedViews: []) {
-                    ForEach(sectionsWithOffsets, id: \.group.title) { entry in
-                        sectionHeader(entry.group.title)
+            // A `List` (not a hand-built ScrollView) is what `.searchable` and
+            // `.refreshable` are designed to coordinate with — it owns the
+            // UISearchController/refresh-control plumbing, so the search bar no
+            // longer jumps during pull-to-refresh. Section headers stay as plain
+            // rows (not `Section` headers) to keep them non-pinned, and native
+            // separators are hidden in favor of our CanvasDivider.
+            List {
+                ForEach(sectionsWithOffsets, id: \.group.title) { entry in
+                    sectionHeader(entry.group.title)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
 
-                        ForEach(Array(entry.group.items.enumerated()), id: \.element.id) { index, item in
-                            let globalIndex = entry.startIndex + index
+                    ForEach(Array(entry.group.items.enumerated()), id: \.element.id) { index, item in
+                        let globalIndex = entry.startIndex + index
+                        VStack(spacing: 0) {
                             row(for: item, staggerIndex: globalIndex)
-                                .id(item.id)
-                                .onAppear {
-                                    if globalIndex >= visibleCount - prefetchLead {
-                                        extendWindow()
-                                    }
-                                }
 
                             if index < entry.group.items.count - 1 {
                                 CanvasDivider()
                             }
                         }
+                        .id(item.id)
+                        .onAppear {
+                            if globalIndex >= visibleCount - prefetchLead {
+                                extendWindow()
+                            }
+                        }
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                     }
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 32)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .contentMargins(.bottom, 32, for: .scrollContent)
             .refreshable {
                 await walletManager.syncPendingMintQuotes()
                 await walletManager.checkAllPendingTokens()

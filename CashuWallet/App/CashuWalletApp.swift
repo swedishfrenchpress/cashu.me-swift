@@ -22,6 +22,7 @@ struct CashuWalletApp: App {
                     case .active:
                         Task { await CashuRequestListener.shared.start() }
                         Task { await walletManager.checkAllPendingTokens() }
+                        Task { await walletManager.syncPendingMintQuotesIfStale() }
                     case .background:
                         Task { await CashuRequestListener.shared.stop() }
                     default:

@@ -41,6 +41,10 @@ struct MainWalletView: View {
             }
             .scrollIndicators(.hidden)
             .mask(scrollFadeMask)
+            .refreshable {
+                await walletManager.syncPendingMintQuotes()
+                await walletManager.checkAllPendingTokens()
+            }
             .safeAreaInset(edge: .top, spacing: 0) {
                 fixedTopSection
                     .background(
