@@ -565,13 +565,10 @@ struct RestoreWalletView: View {
                 if isEmpty {
                     Button(action: finishRestore) {
                         Text("Skip")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .textLinkButton()
                     .disabled(isRestoringMints)
                 } else {
                     Button(action: finishRestore) {
