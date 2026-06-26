@@ -37,10 +37,9 @@ struct ReceiveLightningView: View {
                             insertion: .move(edge: .trailing).combined(with: .opacity),
                             removal: .opacity
                         ))
-                } else if isCreatingRequest && isAmountlessOffer {
-                    // Any-amount reusable offer auto-creates with no keypad step,
-                    // so there's no inline button spinner to host the wait — show
-                    // a dedicated overlay between picker-dismiss and the QR.
+                } else if isCreatingRequest && (isAmountlessOffer || selectedMethod == .onchain) {
+                    // Auto-creating requests (amountless BOLT12 or onchain) have no
+                    // keypad to host the spinner — show a dedicated overlay.
                     creatingOverlay
                         .transition(.opacity)
                 } else {
@@ -278,20 +277,20 @@ struct ReceiveLightningView: View {
             .accessibilityLabel("Method: \(selectedMethod.friendlyTitle)")
     }
 
-    /// Shown only during the any-amount auto-create, between the picker
-    /// dismissing and the offer QR sliding in. The amount-bearing paths keep
-    /// their inline button spinner, so this never renders for them.
+    /// Shown while auto-creating a request (amountless BOLT12 or onchain address),
+    /// between the picker dismissing and the QR sliding in.
     private var creatingOverlay: some View {
-        VStack(spacing: 16) {
+        let label = selectedMethod == .onchain ? "Generating address" : "Creating reusable invoice"
+        return VStack(spacing: 16) {
             ProgressView()
                 .controlSize(.large)
-            Text("Creating reusable invoice")
+            Text(label)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Creating reusable invoice")
+        .accessibilityLabel(label)
     }
 
     // MARK: - Mint Selector
@@ -372,35 +371,23 @@ struct ReceiveLightningView: View {
                         .foregroundStyle(expiryTimeRemaining < 60 ? Color.red : Color.primary.opacity(0.5))
                     }
 
-                    if let explorerURL = blockExplorerURL(for: quote) {
-                        Link(blockExplorerLabel(for: quote), destination: explorerURL)
-                            .font(.subheadline.weight(.medium))
-                    }
-
-                    // Detail rows live directly on the canvas — no gray card.
-                    // Hairline dividers separate them; eye flows down the
-                    // page without competing surfaces.
-                    VStack(spacing: 0) {
+                    if let mint = walletManager.activeMint {
                         detailRow(
-                            icon: "number",
-                            label: "Amount",
-                            value: quote.amount.map { formattedAmount(sats: $0) } ?? "Set by sender"
+                            icon: "bitcoinsign.bank.building",
+                            label: "Mint",
+                            value: extractMintHost(mint.url)
                         )
-                        canvasDivider
-                        detailRow(icon: "info.circle", label: "State", value: quoteStateText(for: quote))
-                        if let mint = walletManager.activeMint {
-                            canvasDivider
-                            detailRow(
-                                icon: "bitcoinsign.bank.building",
-                                label: "Mint",
-                                value: extractMintHost(mint.url)
-                            )
-                        }
+                        .padding(.top, 8)
+                        .padding(.horizontal, 4)
                     }
-                    .padding(.top, 8)
-                    .padding(.horizontal, 4)
                 }
                 .padding(.horizontal)
+            }
+
+            if let explorerURL = blockExplorerURL(for: quote) {
+                Link(blockExplorerLabel(for: quote), destination: explorerURL)
+                    .font(.subheadline.weight(.medium))
+                    .padding(.vertical, 12)
             }
 
             Button(action: { copyRequest(quote.request) }) {
@@ -425,18 +412,35 @@ struct ReceiveLightningView: View {
     private func amountSummary(for quote: MintQuoteInfo) -> some View {
         VStack(spacing: 6) {
             if let amount = quote.amount {
-                // Smaller than the QR — the QR is the focal element on this
-                // screen; the amount confirms it.
-                CurrencyAmountDisplay(
-                    sats: amount,
-                    primary: $settings.amountDisplayPrimary,
-                    primarySize: 32
-                )
-                .accessibilityLabel("Request amount: \(amount) sats")
+                if quote.paymentMethod == .onchain {
+                    // Onchain: amount surfaces once the sender has paid (amountPaid).
+                    // Always shown in sats — no fiat toggle.
+                    Text(AmountFormatter.sats(amount, useBitcoinSymbol: settings.useBitcoinSymbol))
+                        .font(.system(size: 32, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .accessibilityLabel("Amount received: \(amount) sats")
+                } else {
+                    // Smaller than the QR — the QR is the focal element on this
+                    // screen; the amount confirms it.
+                    CurrencyAmountDisplay(
+                        sats: amount,
+                        primary: $settings.amountDisplayPrimary,
+                        primarySize: 32
+                    )
+                    .accessibilityLabel("Request amount: \(amount) sats")
+                }
             } else {
                 if isCreatingRequest {
                     ProgressView()
                         .tint(.secondary)
+                } else if quote.paymentMethod == .onchain {
+                    Button { createRequest(method: .onchain, amountless: false, forceNew: true) } label: {
+                        Label("Use new address", systemImage: "arrow.clockwise")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel("Use new address")
+                    .accessibilityHint("Generates a fresh deposit address and replaces the current QR code")
                 } else {
                     Button { createRequest(method: .bolt12, amountless: true) } label: {
                         Label("Generate new invoice", systemImage: "arrow.clockwise")
@@ -653,7 +657,13 @@ struct ReceiveLightningView: View {
     /// single place that owns the (method, isAmountless) transition, so there's
     /// no split between a sheet binding-write and an `onChange` reaction.
     private func applyMethodOption(_ option: ReceiveMethodOption) {
-        if option.autoCreates {
+        if option.method == .onchain {
+            // Onchain: no amount needed — generate an address immediately.
+            selectedMethod = .onchain
+            isAmountless = false
+            amountString = ""
+            createRequest(method: .onchain, amountless: false)
+        } else if option.autoCreates {
             // Any-amount reusable offer: skip the keypad and create now. Set
             // state so the overlay/title/switcher reflect the reusable method,
             // then create with EXPLICIT params (don't rely on the @State writes
@@ -663,8 +673,7 @@ struct ReceiveLightningView: View {
             amountString = ""
             loadOrCreateAmountlessOffer()
         } else {
-            // Lightning / on-chain / fixed reusable: land on the amount screen,
-            // carrying any typed amount across (existing behavior).
+            // Lightning / fixed reusable: land on the amount screen.
             selectedMethod = option.method
             isAmountless = false
         }
@@ -704,12 +713,11 @@ struct ReceiveLightningView: View {
         }
     }
 
-    private func createRequest(method requestMethod: PaymentMethodKind, amountless: Bool) {
-        // Only an amountless offer submits no amount; BOLT11, on-chain, and a
-        // BOLT12 offer with a typed amount all require a positive value.
-        let requestAmount: UInt64? = amountless ? nil : (amountSats > 0 ? amountSats : nil)
+    private func createRequest(method requestMethod: PaymentMethodKind, amountless: Bool, forceNew: Bool = false) {
+        // Onchain is always amountless (sender decides). Lightning/BOLT12 require a value.
+        let requestAmount: UInt64? = (amountless || requestMethod == .onchain) ? nil : (amountSats > 0 ? amountSats : nil)
 
-        if !amountless, (requestAmount ?? 0) == 0 {
+        if !amountless, requestMethod != .onchain, (requestAmount ?? 0) == 0 {
             return
         }
 
@@ -727,10 +735,17 @@ struct ReceiveLightningView: View {
 
         Task { @MainActor in
             do {
-                let quote = try await walletManager.createMintQuote(
-                    amount: requestAmount,
-                    method: requestMethod
-                )
+                let quote: MintQuoteInfo
+                if !forceNew,
+                   requestMethod == .onchain,
+                   let existing = try await walletManager.existingOnchainMintQuote() {
+                    quote = existing
+                } else {
+                    quote = try await walletManager.createMintQuote(
+                        amount: requestAmount,
+                        method: requestMethod
+                    )
+                }
                 quoteCreatedAt = Date()
                 mintQuote = quote
             } catch {

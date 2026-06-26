@@ -124,7 +124,7 @@ enum PaymentMethodKind: String, CaseIterable, Codable, Hashable {
     }
 
     var requiresMintAmount: Bool {
-        self != .bolt12
+        self != .bolt12 && self != .onchain
     }
 
     var supportsOptionalMintAmount: Bool {

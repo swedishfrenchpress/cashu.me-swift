@@ -17,6 +17,10 @@ extension WalletManager {
         try await lightningService.existingAmountlessOffer()
     }
 
+    func existingOnchainMintQuote() async throws -> MintQuoteInfo? {
+        try await lightningService.existingOnchainMintQuote()
+    }
+
     func checkMintQuote(quoteId: String) async throws -> MintQuoteInfo {
         return try await lightningService.checkMintQuote(quoteId: quoteId)
     }
