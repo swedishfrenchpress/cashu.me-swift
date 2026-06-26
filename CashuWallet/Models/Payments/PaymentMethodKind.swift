@@ -165,11 +165,12 @@ enum ReceiveMethodOption: Hashable, Identifiable, CaseIterable {
     var autoCreates: Bool { isAmountless }
 
     /// Plain-language title, mirroring `PaymentMethodKind.friendlyTitle`. Both
-    /// reusable rows share the same title; `friendlyDescriptor` distinguishes.
+    /// reusable rows use distinct titles; `friendlyDescriptor` adds detail.
     var friendlyTitle: String {
         switch self {
         case .lightning:                   return "Lightning invoice"
-        case .reusableFixed, .reusableAny: return "Reusable invoice"
+        case .reusableFixed: return "Reusable invoice"
+        case .reusableAny:   return "Flexible invoice"
         case .onchain:                     return "On-chain address"
         }
     }
