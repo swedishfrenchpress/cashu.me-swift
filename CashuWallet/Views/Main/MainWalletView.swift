@@ -323,7 +323,7 @@ struct MainWalletView: View {
                         "Send",
                         identifier: "wallet-action-send",
                         hint: "Opens options to send ecash or pay lightning invoices"
-                    ) { activeSheet = .chooser(.send) }
+                    ) { activeSheet = .send }
                 }
             }
         } else {
@@ -335,7 +335,7 @@ struct MainWalletView: View {
                 .accessibilityIdentifier("wallet-action-receive")
                 .accessibilityHint("Opens options to receive ecash or lightning payments")
 
-                Button { activeSheet = .chooser(.send) } label: {
+                Button { activeSheet = .send } label: {
                     Text("Send")
                 }
                 .glassButton()
@@ -647,6 +647,21 @@ struct MainWalletView: View {
             .environmentObject(walletManager)
             .presentationDragIndicator(.visible)
             .modifier(ChooserSheetPresentation(height: chooserHeight(for: action)))
+        case .send:
+            UnifiedSendView(
+                onClose: { activeSheet = nil },
+                onReceive: { activeSheet = .chooser(.receive) },
+                onAddCustomMint: { activeSheet = .discoverMints },
+                onContactless: {
+                    activeSheet = nil
+                    contactlessCoordinator.start(
+                        walletManager: walletManager,
+                        navigationManager: navigationManager
+                    )
+                }
+            )
+            .environmentObject(walletManager)
+            .presentationDetents([.large])
         case .scanner:
             ScannerWrapperView()
                 .environmentObject(walletManager)
@@ -754,6 +769,7 @@ private enum WalletFlow: Identifiable {
 
 private enum WalletSheet: Identifiable {
     case chooser(WalletActionSheet)
+    case send
     case scanner
     case flow(WalletFlow)
     case discoverMints
@@ -762,6 +778,8 @@ private enum WalletSheet: Identifiable {
         switch self {
         case .chooser(let action):
             return "chooser-\(action.id)"
+        case .send:
+            return "send"
         case .scanner:
             return "scanner"
         case .flow(let flow):
