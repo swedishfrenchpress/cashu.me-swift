@@ -24,12 +24,6 @@ struct SettingsView: View {
     @State private var relayInput = ""
     @State private var relayError: String?
     @State private var copiedRelay: String?
-    @State private var p2pkImportText = ""
-    @State private var showImportP2PK = false
-    @State private var p2pkError: String?
-    @State private var expandedP2PKKeys = false
-    @State private var activeQRPayload: QRPayload?
-    @State private var copiedP2PKPublicKey: String?
     @State private var walletActionError: String?
 
     var body: some View {
@@ -59,7 +53,7 @@ struct SettingsView: View {
                         navRow("Lightning", icon: "bolt.fill") {
                             lightningDetailView
                         }
-                        navRow("P2PK", icon: "lock.fill") {
+                        navRow("Locked Ecash", icon: "lock.fill") {
                             p2pkDetailView
                         }
                     }
@@ -110,19 +104,6 @@ struct SettingsView: View {
             .sheet(isPresented: $showBackup) {
                 BackupView()
                     .environmentObject(walletManager)
-                    .presentationDetents([.medium, .large])
-                    .canvasSheetBackground()
-            }
-            .sheet(isPresented: $showImportP2PK) {
-                ImportP2PKSheet(
-                    nsecText: $p2pkImportText,
-                    onImport: importP2PKNsec
-                )
-                .presentationDetents([.medium])
-                .canvasSheetBackground()
-            }
-            .sheet(item: $activeQRPayload) { payload in
-                QRCodeDetailSheet(title: payload.title, content: payload.content)
                     .presentationDetents([.medium, .large])
                     .canvasSheetBackground()
             }
@@ -353,18 +334,11 @@ struct SettingsView: View {
 
     private var p2pkDetailView: some View {
         ScrollView {
-            P2PKSettingsSection(
-                expandedP2PKKeys: $expandedP2PKKeys,
-                activeQRPayload: $activeQRPayload,
-                copiedP2PKPublicKey: $copiedP2PKPublicKey,
-                p2pkImportText: $p2pkImportText,
-                showImportP2PK: $showImportP2PK,
-                p2pkError: $p2pkError
-            )
-            .padding(.horizontal)
-            .padding(.bottom, 32)
+            P2PKSettingsSection()
+                .padding(.horizontal)
+                .padding(.bottom, 32)
         }
-        .navigationTitle("P2PK")
+        .navigationTitle("Locked Ecash")
         .toolbarBackground(.hidden, for: .navigationBar)
     }
 
@@ -398,16 +372,6 @@ struct SettingsView: View {
         }
     }
 
-    private func importP2PKNsec() {
-        p2pkError = nil
-        do {
-            try settings.importP2PKNsec(p2pkImportText)
-            p2pkImportText = ""
-            showImportP2PK = false
-        } catch {
-            p2pkError = error.localizedDescription
-        }
-    }
 }
 
 // MARK: - Security Settings Section
@@ -1238,34 +1202,61 @@ struct ImportP2PKSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var validationError: String?
 
+    private var trimmed: String {
+        nsecText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    TextField("nsec1...", text: $nsecText)
+            VStack(spacing: 16) {
+                Text("Paste a private key (nsec) to add it. You'll be able to claim ecash locked to it.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 8)
+
+                HStack(spacing: 10) {
+                    TextField("nsec1…", text: $nsecText)
                         .font(.system(.body, design: .monospaced))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                } footer: {
-                    Text("Import an nsec key to add a P2PK locking key.")
+
+                    Button(action: { nsecText.isEmpty ? paste() : clear() }) {
+                        Image(systemName: nsecText.isEmpty ? "doc.on.clipboard" : "xmark.circle.fill")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(nsecText.isEmpty ? "Paste" : "Clear")
                 }
+                .padding(14)
+                .liquidGlass(in: RoundedRectangle(cornerRadius: 12))
 
                 if let validationError {
-                    Section {
-                        Text(validationError)
-                            .foregroundStyle(.red)
-                    }
+                    Text(validationError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                        .transition(.opacity)
                 }
 
-                Section {
-                    Button("Import nsec") {
-                        if validate() { onImport() }
-                    }
-                    .disabled(nsecText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Spacer(minLength: 0)
+
+                Button(action: { if validate() { onImport() } }) {
+                    Text("Import key")
                 }
+                .glassButton()
+                .disabled(trimmed.isEmpty)
             }
-            .navigationTitle("Import P2PK")
+            .padding(.horizontal)
+            .padding(.bottom, 16)
+            .animation(.easeInOut(duration: 0.2), value: validationError)
+            .navigationTitle("Import a key")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -1274,11 +1265,23 @@ struct ImportP2PKSheet: View {
         }
     }
 
+    private func paste() {
+        if let clip = UIPasteboard.general.string {
+            HapticFeedback.selection()
+            nsecText = clip.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private func clear() {
+        HapticFeedback.selection()
+        nsecText = ""
+        validationError = nil
+    }
+
     private func validate() -> Bool {
         validationError = nil
-        let value = nsecText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard value.hasPrefix("nsec1") else {
-            validationError = "Invalid nsec format"
+        guard trimmed.lowercased().hasPrefix("nsec1") else {
+            validationError = "That doesn't look like an nsec key. It should start with “nsec1”."
             return false
         }
         return true

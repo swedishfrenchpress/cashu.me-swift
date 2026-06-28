@@ -107,7 +107,7 @@ struct SendView: View {
             .sheet(isPresented: $showLockScanner) {
                 ScannerWrapperView(
                     onScanned: handleScannedPubkey,
-                    promptText: "Scan a public key to lock to",
+                    promptText: "Scan a key or npub to lock to",
                     quickFills: lockQuickFills
                 )
                 .environmentObject(walletManager)
@@ -300,7 +300,7 @@ struct SendView: View {
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
                             .tracking(0.5)
-                        Text(shortKey(key))
+                        Text(lockedKeyLabel(key))
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -334,9 +334,20 @@ struct SendView: View {
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
-    private func shortKey(_ key: String) -> String {
-        guard key.count > 16 else { return key }
-        return "\(key.prefix(10))…\(key.suffix(6))"
+    /// Label for the locked-to chip: "Your key" when locking to the recoverable
+    /// primary key, otherwise the recipient's npub-style short form.
+    private func lockedKeyLabel(_ key: String) -> String {
+        if let primary = settings.primaryP2PKPublicKey,
+           normalizeForCompare(primary) == normalizeForCompare(key) {
+            return "Your key"
+        }
+        return P2PKKeyDisplay.shortLabel(forPubkey: key)
+    }
+
+    private func normalizeForCompare(_ pubkey: String) -> String {
+        let s = pubkey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if s.count == 66, s.hasPrefix("02") || s.hasPrefix("03") { return String(s.dropFirst(2)) }
+        return s
     }
 
     // MARK: - Token Display View
@@ -487,7 +498,7 @@ struct SendView: View {
         }
         let selectedP2PKPubkey = lockWithP2PK ? normalizedP2PKPubkeyInput : nil
         guard !lockWithP2PK || selectedP2PKPubkey != nil else {
-            errorMessage = "Please enter a valid P2PK key."
+            errorMessage = "Choose a valid key to lock to."
             return
         }
 
@@ -518,27 +529,36 @@ struct SendView: View {
         Self.normalizeP2PKPubkey(p2pkPubkeyInput)
     }
 
-    /// Normalizes a P2PK public key string: accepts a 66-char `02`/`03`-prefixed
-    /// hex key, or bare 64-char hex (auto-prefixed `02`). Returns nil for anything
-    /// else — including Nostr `npub`s, which this scheme can't lock to.
+    /// Normalizes a key to lock to: accepts a 66-char `02`/`03`-prefixed hex key,
+    /// bare 64-char hex (auto-prefixed `02`), or a Nostr `npub` (decoded to its
+    /// x-only hex and prefixed `02`). Returns nil for anything else.
     static func normalizeP2PKPubkey(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        let hexChars = CharacterSet(charactersIn: "0123456789abcdef")
-        let allHex = trimmed.unicodeScalars.allSatisfy { hexChars.contains($0) }
+        let lower = trimmed.lowercased()
 
-        if trimmed.count == 64 && allHex {
-            return "02\(trimmed)"
+        // Accept an npub by decoding it to its x-only hex.
+        if lower.hasPrefix("npub1"),
+           let bytes = try? Bech32.decode(hrp: "npub", bech32: lower),
+           bytes.count == 32 {
+            return "02" + bytes.map { String(format: "%02x", $0) }.joined()
         }
 
-        guard trimmed.count == 66,
-              (trimmed.hasPrefix("02") || trimmed.hasPrefix("03")),
+        let hexChars = CharacterSet(charactersIn: "0123456789abcdef")
+        let allHex = lower.unicodeScalars.allSatisfy { hexChars.contains($0) }
+
+        if lower.count == 64 && allHex {
+            return "02\(lower)"
+        }
+
+        guard lower.count == 66,
+              (lower.hasPrefix("02") || lower.hasPrefix("03")),
               allHex else {
             return nil
         }
 
-        return trimmed
+        return lower
     }
 
     // MARK: - Lock Ecash
@@ -547,7 +567,7 @@ struct SendView: View {
     /// next send; invalid input (junk, or an `npub`) is rejected.
     private func handleScannedPubkey(_ scanned: String) {
         guard let normalized = Self.normalizeP2PKPubkey(scanned) else {
-            errorMessage = "That's not a valid public key."
+            errorMessage = "That's not a valid key or npub."
             HapticFeedback.notification(.error)
             return
         }
@@ -559,12 +579,13 @@ struct SendView: View {
 
     private func lockQuickFills() -> [ScannerWrapperView.ScannerQuickFill] {
         var fills: [ScannerWrapperView.ScannerQuickFill] = []
+        // "Lock to my key" is opt-in via Settings → Locked Ecash → Quick lock to my key.
+        if settings.showP2PKButtonInDrawer, let myKey = settings.primaryP2PKPublicKey {
+            fills.append(.init(title: "Lock to my key", systemImage: "key.fill", value: myKey))
+        }
         if let clip = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
            Self.normalizeP2PKPubkey(clip) != nil {
             fills.append(.init(title: "Paste key", systemImage: "doc.on.clipboard", value: clip))
-        }
-        if let ownKey = settings.p2pkKeys.last {
-            fills.append(.init(title: "Use my latest key", systemImage: "key", value: ownKey.publicKey))
         }
         return fills
     }

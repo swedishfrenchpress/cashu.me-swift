@@ -6,6 +6,7 @@ struct ReceiveView: View {
     @ObservedObject private var settings = SettingsManager.shared
 
     @State private var selectedOption: ReceiveOption?
+    @State private var lockedReceiveEncoded: String?
 
     enum ReceiveOption: String, Identifiable {
         case paste, scan, lightning, lockedKey
@@ -71,7 +72,7 @@ struct ReceiveView: View {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Receive Locked Ecash")
-                                Text("Have someone scan your key")
+                                Text("Receive ecash only you can claim")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -81,7 +82,7 @@ struct ReceiveView: View {
                         }
                     }
                     .accessibilityLabel("Receive Locked Ecash")
-                    .accessibilityHint("Shows your public key so someone can lock ecash to you")
+                    .accessibilityHint("Shows a request so someone can send ecash only you can claim")
                     .accessibilityAddTraits(.isButton)
                 }
             }
@@ -109,8 +110,8 @@ struct ReceiveView: View {
                             .environmentObject(walletManager)
                     case .lockedKey:
                         Group {
-                            if let key = settings.p2pkKeys.last {
-                                QRCodeDetailSheet(title: "Receive Locked Ecash", content: key.publicKey)
+                            if let encoded = lockedReceiveEncoded {
+                                QRCodeDetailSheet(title: "Receive Locked Ecash", content: encoded)
                             } else {
                                 lockedKeyUnavailable
                             }
@@ -136,13 +137,12 @@ struct ReceiveView: View {
         }
     }
 
-    /// Shows the user's P2PK public key QR so a counterparty can lock ecash to
-    /// it. Generates a key on first use if the wallet has none yet.
+    /// Builds a NUT-18 Cashu payment request locked to the wallet's primary
+    /// (seed-derived) key, so anyone who pays it sends ecash only this wallet can
+    /// claim. Routes the proofs back over Nostr.
     private func presentReceiveLockedKey() {
         HapticFeedback.selection()
-        if settings.p2pkKeys.isEmpty {
-            _ = settings.generateP2PKKey()
-        }
+        lockedReceiveEncoded = LockedReceiveRequest.build()
         selectedOption = .lockedKey
     }
 
@@ -151,9 +151,9 @@ struct ReceiveView: View {
             Image(systemName: "key.slash")
                 .font(.largeTitle)
                 .foregroundStyle(.secondary)
-            Text("Couldn't create a key")
+            Text("Couldn't create a request")
                 .font(.headline)
-            Text("Try again from Settings → P2PK.")
+            Text("This needs your wallet set up with a Nostr relay. Check Settings → Nostr, then try again.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
