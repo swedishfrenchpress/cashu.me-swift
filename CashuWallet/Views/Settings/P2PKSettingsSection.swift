@@ -121,7 +121,6 @@ struct P2PKSettingsSection: View {
         }
         .sheet(isPresented: $showExplainer) {
             LockedEcashExplainerSheet()
-                .canvasSheetBackground()
         }
         .sheet(item: $activeQR) { payload in
             QRCodeDetailSheet(title: payload.title, content: payload.content)
@@ -381,7 +380,6 @@ private struct AdvancedKeysView: View {
         .animation(.easeInOut(duration: 0.2), value: actionError)
         .sheet(isPresented: $showImport) {
             ImportP2PKSheet(nsecText: $importText) { importKey() }
-                .canvasSheetBackground()
         }
     }
 

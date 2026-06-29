@@ -103,7 +103,6 @@ struct ReceiveLightningView: View {
                 MintSelectorSheet(selectedMint: $walletManager.activeMint)
                     .environmentObject(walletManager)
                     .presentationDetents([.medium])
-                    .canvasSheetBackground()
             }
             .sheet(isPresented: $showMethodPicker) {
                 MethodPickerSheet(
@@ -112,7 +111,6 @@ struct ReceiveLightningView: View {
                     onSelect: { applyMethodOption($0) }
                 )
                 .presentationDetents([.medium])
-                .canvasSheetBackground()
             }
             .onAppear {
                 syncSelectedMethodWithActiveMint()
@@ -439,7 +437,6 @@ struct ReceiveLightningView: View {
                 currentAmount: quote.amount,
                 onSelect: { setReusableOfferAmount($0) }
             )
-            .canvasSheetBackground()
         }
     }
 

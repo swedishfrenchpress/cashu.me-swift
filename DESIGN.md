@@ -585,6 +585,12 @@ camera scanner only.
   attribute is small, the edit is one tap, the surrounding context never leaves.
 - **Confirmation dialogs**: `.confirmationDialog(...)` for destructive
   actions (remove mint, sign out). Never a custom alert sheet.
+- **Sheet background (carve-out, 2026-06-29)**: full-screen `.large` flows and
+  `.fullScreenCover`s pin to the flat canvas via `canvasSheetBackground()` so they
+  read seamless with home. Bottom-sheet pickers, choosers, and inspectors
+  (`.medium` / `.height(...)` detents) instead keep SwiftUI's **default**
+  translucent sheet background — they should read as floating layers, not as the
+  home canvas.
 
 ### Cashu Request Inspector
 

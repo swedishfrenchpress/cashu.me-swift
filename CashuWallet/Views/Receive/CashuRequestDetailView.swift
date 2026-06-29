@@ -74,7 +74,6 @@ struct CashuRequestDetailView: View {
             )
             .environmentObject(walletManager)
             .presentationDetents([.medium])
-            .canvasSheetBackground()
         }
         .sheet(isPresented: $showAmountPicker) {
             CashuRequestAmountPickerSheet(
@@ -83,7 +82,6 @@ struct CashuRequestDetailView: View {
                     regenerate(amount: amount)
                 }
             )
-            .canvasSheetBackground()
         }
         .onAppear {
             // Baseline for the receive-flow balance watcher below.

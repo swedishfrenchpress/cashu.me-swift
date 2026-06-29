@@ -71,7 +71,6 @@ struct MainWalletView: View {
             }
             .sheet(item: $activeSheet) { sheet in
                 sheetView(for: sheet)
-                    .canvasSheetBackground()
             }
             .sheet(item: $selectedTransaction) { transaction in
                 TransactionDetailView(transaction: transaction)
@@ -665,10 +664,12 @@ struct MainWalletView: View {
             )
             .environmentObject(walletManager)
             .presentationDetents([.large])
+            .canvasSheetBackground()
         case .scanner:
             ScannerWrapperView()
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
+                .canvasSheetBackground()
         case .flow(let flow):
             flowView(for: flow)
         case .discoverMints:
@@ -676,6 +677,7 @@ struct MainWalletView: View {
                 Task { try? await walletManager.addMint(url: url) }
             }
             .environmentObject(walletManager)
+            .canvasSheetBackground()
         }
     }
 
@@ -691,18 +693,22 @@ struct MainWalletView: View {
             ReceiveLightningView()
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
+                .canvasSheetBackground()
         case .sendEcash:
             SendView()
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
+                .canvasSheetBackground()
         case .sendLightning:
             MeltView()
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
+                .canvasSheetBackground()
         case .sendLightningWithInvoice(let invoice):
             MeltViewWithInvoice(invoice: invoice)
                 .environmentObject(walletManager)
                 .presentationDetents([.large])
+                .canvasSheetBackground()
         case .contactlessPay:
             EmptyView()
         }

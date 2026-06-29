@@ -525,7 +525,6 @@ struct CashuPaymentRequestPayView: View {
                 )
                 .environmentObject(walletManager)
                 .presentationDetents([.medium])
-                .canvasSheetBackground()
             }
             .onAppear {
                 syncSelectedMint()

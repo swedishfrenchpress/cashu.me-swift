@@ -97,7 +97,6 @@ struct SendView: View {
                 )
                     .environmentObject(walletManager)
                     .presentationDetents([.medium])
-                    .canvasSheetBackground()
             }
             .sheet(isPresented: $showShareSheet) {
                 if let token = generatedToken {
@@ -854,7 +853,7 @@ struct UnifiedSendView: View {
                     .environmentObject(walletManager)
                     .canvasSheetBackground()
             }
-            .sheet(isPresented: $showingMintPicker) { mintPickerSheet.canvasSheetBackground() }
+            .sheet(isPresented: $showingMintPicker) { mintPickerSheet }
             .fullScreenCover(item: $route) { routeView($0).canvasSheetBackground() }
             .onChange(of: destination) { handleDestinationChange() }
             .onChange(of: entryUnit) { oldUnit, newUnit in
@@ -2157,7 +2156,6 @@ struct MeltView: View {
                 )
                     .environmentObject(walletManager)
                     .presentationDetents([.medium])
-                    .canvasSheetBackground()
             }
             .onAppear {
                 syncMeltModeWithAvailableMints()

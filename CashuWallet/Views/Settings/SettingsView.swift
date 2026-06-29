@@ -105,13 +105,11 @@ struct SettingsView: View {
                 BackupView()
                     .environmentObject(walletManager)
                     .presentationDetents([.medium, .large])
-                    .canvasSheetBackground()
             }
             .sheet(isPresented: $showCurrencySheet) {
                 CurrencyPickerSheet()
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
-                    .canvasSheetBackground()
             }
             .alert("Delete Wallet", isPresented: $showDeleteConfirm) {
                 Button("Cancel", role: .cancel) {}
