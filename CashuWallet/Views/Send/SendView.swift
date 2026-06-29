@@ -107,7 +107,7 @@ struct SendView: View {
             .sheet(isPresented: $showLockScanner) {
                 ScannerWrapperView(
                     onScanned: handleScannedPubkey,
-                    promptText: "Scan a key or npub to lock to",
+                    promptText: "Scan a public key to lock to",
                     quickFills: lockQuickFills
                 )
                 .environmentObject(walletManager)
@@ -529,36 +529,27 @@ struct SendView: View {
         Self.normalizeP2PKPubkey(p2pkPubkeyInput)
     }
 
-    /// Normalizes a key to lock to: accepts a 66-char `02`/`03`-prefixed hex key,
-    /// bare 64-char hex (auto-prefixed `02`), or a Nostr `npub` (decoded to its
-    /// x-only hex and prefixed `02`). Returns nil for anything else.
+    /// Normalizes a P2PK public key string: accepts a 66-char `02`/`03`-prefixed
+    /// hex key, or bare 64-char hex (auto-prefixed `02`). Returns nil for anything
+    /// else — including Nostr `npub`s, which this scheme can't lock to.
     static func normalizeP2PKPubkey(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmed.isEmpty else { return nil }
 
-        let lower = trimmed.lowercased()
-
-        // Accept an npub by decoding it to its x-only hex.
-        if lower.hasPrefix("npub1"),
-           let bytes = try? Bech32.decode(hrp: "npub", bech32: lower),
-           bytes.count == 32 {
-            return "02" + bytes.map { String(format: "%02x", $0) }.joined()
-        }
-
         let hexChars = CharacterSet(charactersIn: "0123456789abcdef")
-        let allHex = lower.unicodeScalars.allSatisfy { hexChars.contains($0) }
+        let allHex = trimmed.unicodeScalars.allSatisfy { hexChars.contains($0) }
 
-        if lower.count == 64 && allHex {
-            return "02\(lower)"
+        if trimmed.count == 64 && allHex {
+            return "02\(trimmed)"
         }
 
-        guard lower.count == 66,
-              (lower.hasPrefix("02") || lower.hasPrefix("03")),
+        guard trimmed.count == 66,
+              (trimmed.hasPrefix("02") || trimmed.hasPrefix("03")),
               allHex else {
             return nil
         }
 
-        return lower
+        return trimmed
     }
 
     // MARK: - Lock Ecash
@@ -567,7 +558,7 @@ struct SendView: View {
     /// next send; invalid input (junk, or an `npub`) is rejected.
     private func handleScannedPubkey(_ scanned: String) {
         guard let normalized = Self.normalizeP2PKPubkey(scanned) else {
-            errorMessage = "That's not a valid key or npub."
+            errorMessage = "That's not a valid public key."
             HapticFeedback.notification(.error)
             return
         }

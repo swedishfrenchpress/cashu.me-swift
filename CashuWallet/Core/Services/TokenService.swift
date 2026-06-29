@@ -313,7 +313,7 @@ enum TokenServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidP2PKPubkey:
-            return "That key isn't valid. Use a 66-character hex key (02/03 prefix) or an npub."
+            return "That key isn't valid. Use a 66-character hex key (02/03 prefix)."
         case .missingP2PKSigningKey:
             return "This ecash is locked to a key you don't hold. Add the matching key in Settings → Locked Ecash to receive it."
         }

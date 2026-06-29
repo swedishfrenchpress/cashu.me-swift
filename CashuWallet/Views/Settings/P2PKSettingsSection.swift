@@ -3,30 +3,22 @@ import SwiftUI
 // MARK: - Key display helpers
 
 /// Formatting for P2PK keys so they read the same everywhere (this hub, the Send
-/// lock chip, the receive token detail). Keys are shown npub-first — friendlier
-/// and Nostr-native — falling back to truncated hex when a key can't be encoded.
+/// lock chip, the receive token detail). P2PK keys are shown and shared as the
+/// 33-byte compressed hex ("02…") — the form Cashu wallets expect; we never
+/// re-encode them as npub.
 enum P2PKKeyDisplay {
-    /// npub (bech32) for a P2PK pubkey ("02"/"03"-prefixed or bare x-only hex).
-    static func npub(forPubkey pubkey: String) -> String? {
-        let hex = xOnly(pubkey)
-        guard hex.count == 64, let data = Data(hex: hex) else { return nil }
-        return try? Bech32.encode(hrp: "npub", data: data)
-    }
-
-    /// A short, scannable label: "npub1abcdef…wxyz", or middle-truncated hex.
-    static func shortLabel(forPubkey pubkey: String) -> String {
-        if let npub = npub(forPubkey: pubkey) {
-            return middleTruncate(npub, lead: 10, tail: 6)
-        }
-        return middleTruncate(pubkey, lead: 8, tail: 6)
-    }
-
-    /// The full npub when available, else the raw pubkey — for copy / detail.
+    /// The canonical public key for copy / QR: the stored compressed hex ("02…"),
+    /// normalized for casing and whitespace.
     static func canonical(forPubkey pubkey: String) -> String {
-        npub(forPubkey: pubkey) ?? pubkey
+        pubkey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    /// nsec (bech32) for a 32-byte private-key hex.
+    /// A short, scannable label: middle-truncated hex ("02e56288aa5c…2ef6607a91e00").
+    static func shortLabel(forPubkey pubkey: String) -> String {
+        middleTruncate(canonical(forPubkey: pubkey), lead: 12, tail: 12)
+    }
+
+    /// nsec (bech32) for a 32-byte private-key hex — used only when backing up a key.
     static func nsec(forPrivateKeyHex hex: String) -> String? {
         guard let data = Data(hex: hex), data.count == 32 else { return nil }
         return try? Bech32.encode(hrp: "nsec", data: data)
@@ -35,12 +27,6 @@ enum P2PKKeyDisplay {
     static func middleTruncate(_ s: String, lead: Int, tail: Int) -> String {
         guard s.count > lead + tail + 1 else { return s }
         return "\(s.prefix(lead))…\(s.suffix(tail))"
-    }
-
-    private static func xOnly(_ pubkey: String) -> String {
-        let s = pubkey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if s.count == 66, s.hasPrefix("02") || s.hasPrefix("03") { return String(s.dropFirst(2)) }
-        return s
     }
 }
 
