@@ -213,10 +213,12 @@ enum WalletErrorMessage {
             return .error("This mint can't issue ecash for that amount right now. Try another mint.")
         }
 
-        if normalized.contains("amountless invoice")
+        if normalized.contains("invoice has no amount")
+            || normalized.contains("has no amount")
+            || normalized.contains("amountless invoice")
             || normalized.contains("invoice amount undefined")
             || normalized.contains("amount is required") {
-            return .caution("This request doesn't include an amount. Enter one to continue.")
+            return .caution("This invoice doesn't set an amount. Ask the sender for one with the amount set.")
         }
 
         if normalized.contains("amount out")
@@ -313,6 +315,11 @@ enum WalletErrorMessage {
             || message.contains("CashuDevKit")
             || message.contains("errorMessage:")
             || message.contains("CALL_ERROR")
+            // Generic CDK "Unknown error response: `code: N, detail: …`" wrappers. Any
+            // detail we recognize is already mapped above in classified(forRawMessage:);
+            // anything left carries only a numeric code + internal detail, so route it to
+            // the clean generic fallback instead of leaking `code: 0` / `code: 50000`.
+            || lowered.contains("unknown error response")
             // Raw Rust panics (e.g. a failed stderr write inside the CDK FFI). These carry
             // no useful user-facing detail, so route them to the generic fallback instead
             // of showing the panic text verbatim.

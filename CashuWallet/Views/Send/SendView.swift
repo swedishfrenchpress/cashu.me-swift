@@ -881,7 +881,8 @@ struct UnifiedSendView: View {
         InlineNotice(
             message: message,
             severity: errorSeverity,
-            detail: errorShowsMintAction ? meltInsufficientDetail : nil
+            detail: errorShowsMintAction ? meltInsufficientDetail : nil,
+            tinted: true
         )
     }
 
@@ -1188,10 +1189,17 @@ struct UnifiedSendView: View {
     private func advance(_ result: PaymentRequestDecodeResult, raw: String) {
         switch result {
         case .bolt11, .bolt12:
+            if let notice = result.amountlessMeltCaution {
+                // Amountless invoice/offer can't be paid without an amount we don't
+                // collect here — stay on input with a clean caution instead of routing
+                // to a quote that only fails with raw mint jargon.
+                inputHint = notice
+                return
+            }
             let request = PaymentRequestDecoder.encodedLightningRequest(from: raw)
                 ?? PaymentRequestParser.normalizeLightningRequest(raw)
             lockMelt(request: request, mode: .lightning, decoded: result)
-            startMeltConfirm()   // amount carried by the invoice (amountless → quote errors, handled)
+            startMeltConfirm()   // amount carried by the invoice
         case .lightningAddress(let address):
             lockMelt(request: address, mode: .lightning, decoded: result)
             goToAmount()
@@ -2404,7 +2412,8 @@ struct MeltView: View {
         InlineNotice(
             message: message,
             severity: errorSeverity,
-            detail: errorShowsMintAction ? meltInsufficientDetail : nil
+            detail: errorShowsMintAction ? meltInsufficientDetail : nil,
+            tinted: true
         )
     }
 
@@ -2517,6 +2526,14 @@ struct MeltView: View {
             }
             .onChange(of: requestInput) {
                 syncSelectedMeltMint()
+                // Surface the amountless caution the moment a request is pasted/typed —
+                // no Get Quote tap needed to discover it carries no amount. Any other
+                // stale notice clears when the destination changes.
+                if let notice = PaymentRequestDecoder.decode(requestInput).amountlessMeltCaution {
+                    presentError(notice, severity: .caution)
+                } else {
+                    errorMessage = nil
+                }
             }
             .onChange(of: entryUnit) { oldUnit, newUnit in
                 amountString = AmountFormatter.entryConverted(raw: amountString, from: oldUnit, to: newUnit)
@@ -2657,15 +2674,6 @@ struct MeltView: View {
                     .padding(.top, 12)
             }
 
-            if displayMeltMint == nil, !availableMeltMints.isEmpty {
-                InlineNotice(
-                    message: "No mint supports \(selectedMeltPaymentMethod.displayName) payments.",
-                    severity: .caution
-                )
-                .padding(.horizontal)
-                .padding(.top, 12)
-            }
-
             HStack(alignment: .top, spacing: 12) {
                 TextField(requestPlaceholder, text: $requestInput, axis: .vertical)
                     .font(.body)
@@ -2696,13 +2704,27 @@ struct MeltView: View {
             .padding(.horizontal)
             .padding(.top, 16)
 
-            liveDecodeFeedback
-                .padding(.top, 6)
-                .padding(.horizontal)
+            // The decode hint ("BOLT11 invoice — set amount") is redundant once a notice
+            // is showing — the notice carries the same information, in a clearer voice.
+            if errorMessage == nil {
+                liveDecodeFeedback
+                    .padding(.top, 6)
+                    .padding(.horizontal)
+            }
 
             if amountRequired {
                 amountEntrySection
                     .padding(.top, 16)
+            }
+
+            if displayMeltMint == nil, !availableMeltMints.isEmpty {
+                InlineNotice(
+                    message: "No mint supports \(selectedMeltPaymentMethod.displayName) payments.",
+                    severity: .caution,
+                    tinted: true
+                )
+                .padding(.top, 12)
+                .padding(.horizontal)
             }
 
             if let error = errorMessage {
@@ -3125,8 +3147,20 @@ struct MeltView: View {
             return
         }
 
+        if let notice = PaymentRequestDecoder.decode(trimmedInput).amountlessMeltCaution {
+            // Amountless invoice/offer can't be quoted without an amount we don't collect
+            // here — surface the clean caution up-front instead of a raw mint error.
+            presentError(notice, severity: .caution)
+            return
+        }
+
         guard let quoteMint = displayMeltMint else {
-            presentError("No mint supports \(selectedMeltPaymentMethod.displayName) payments.")
+            // The inline notice under the field already explains this whenever the user
+            // has mints; only fall back to the error surface when they have none, so the
+            // two notices never stack the same message.
+            if availableMeltMints.isEmpty {
+                presentError("No mint supports \(selectedMeltPaymentMethod.displayName) payments.")
+            }
             return
         }
 

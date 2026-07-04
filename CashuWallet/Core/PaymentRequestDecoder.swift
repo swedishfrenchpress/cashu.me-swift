@@ -25,6 +25,23 @@ enum PaymentRequestDecodeResult: Equatable {
     case unrecognized
 }
 
+extension PaymentRequestDecodeResult {
+    /// Clean caution copy when this is a Lightning request that carries no amount,
+    /// so every melt entry point surfaces identical, plain-language wording instead
+    /// of a failing quote round-trip that leaks raw CDK codes. Nil for anything that
+    /// isn't an amountless BOLT11 invoice or BOLT12 offer.
+    var amountlessMeltCaution: String? {
+        switch self {
+        case .bolt11(let amountSats, _) where amountSats == nil:
+            return "This invoice doesn't set an amount. Ask the sender for one with the amount set."
+        case .bolt12(let amountSats, _) where amountSats == nil:
+            return "This offer doesn't set an amount. Ask the sender for one with the amount set."
+        default:
+            return nil
+        }
+    }
+}
+
 /// Centralized payment-request decoder. Wraps `PaymentRequestParser` +
 /// CashuDevKit's `decodeInvoice` so the chip preview, recents tap, scan
 /// callback, and live decode feedback all share a single classification path.
