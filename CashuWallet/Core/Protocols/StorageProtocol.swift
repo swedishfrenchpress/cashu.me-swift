@@ -96,7 +96,14 @@ enum StorageKeys {
     static let meltQuoteFees = "wallet.meltQuoteFees"
     static let mintQuoteTimestamps = "wallet.mintQuoteTimestamps"
     static let processedNPCQuotes = "wallet.processedNPCQuotes"
-    
+
+    // Cashu Requests (receive intents shown in History). Key names predate the
+    // `wallet.` prefix convention and must stay stable for existing installs,
+    // so they are wallet-scoped via `walletDataKeys` membership instead.
+    static let cashuRequests = "cashuRequests.v1"
+    static let cashuRequestsCurrentId = "cashuRequests.currentId.v1"
+    static let cashuRequestsProcessedNIP17Ids = "cashuRequests.nip17.processedIds.v1"
+
     // Settings
     static let useBitcoinSymbol = "settings.useBitcoinSymbol"
     static let showFiatBalance = "settings.showFiatBalance"
@@ -114,6 +121,7 @@ enum StorageKeys {
     static let nostrSignerType = "settings.nostrSignerType"
     static let amountDisplayPrimary = "settings.amountDisplayPrimary"
     static let appLockEnabled = "settings.appLockEnabled"
+    static let sentryEnabled = "settings.sentryEnabled"
 
     enum Legacy {
         static let mints = "savedMints"
@@ -182,7 +190,10 @@ enum StorageKeys {
         paymentPreimages,
         meltQuoteFees,
         mintQuoteTimestamps,
-        processedNPCQuotes
+        processedNPCQuotes,
+        cashuRequests,
+        cashuRequestsCurrentId,
+        cashuRequestsProcessedNIP17Ids
     ]
 
     static let walletDataLegacyKeys = [

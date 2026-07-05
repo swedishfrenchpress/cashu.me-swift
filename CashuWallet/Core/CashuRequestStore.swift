@@ -8,15 +8,17 @@ class CashuRequestStore: ObservableObject {
     @Published private(set) var requests: [CashuRequest] = []
     @Published var currentRequestId: String?
 
-    private let storageKey = "cashuRequests.v1"
-    private let currentIdKey = "cashuRequests.currentId.v1"
+    private let storageKey = StorageKeys.cashuRequests
+    private let currentIdKey = StorageKeys.cashuRequestsCurrentId
+    private let userDefaults: UserDefaults
 
     var currentRequest: CashuRequest? {
         guard let id = currentRequestId else { return nil }
         return requests.first(where: { $0.id == id })
     }
 
-    private init() {
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
         load()
     }
 
@@ -25,6 +27,7 @@ class CashuRequestStore: ObservableObject {
     /// `upsertQuoteIntent` so re-opening a reusable offer never duplicates a row.
     @discardableResult
     func create(
+        id: String = CashuRequest.newId(),
         rail: CashuRequest.Rail,
         encoded: String,
         amount: UInt64? = nil,
@@ -37,6 +40,7 @@ class CashuRequestStore: ObservableObject {
         makeCurrent: Bool = false
     ) -> CashuRequest {
         let intent = CashuRequest(
+            id: id,
             encoded: encoded,
             amount: amount,
             unit: unit,
@@ -56,6 +60,7 @@ class CashuRequestStore: ObservableObject {
     }
 
     func createNew(
+        id: String = CashuRequest.newId(),
         amount: UInt64? = nil,
         unit: String = "sat",
         mints: [String] = [],
@@ -63,6 +68,7 @@ class CashuRequestStore: ObservableObject {
         encoded: String
     ) -> CashuRequest {
         create(
+            id: id,
             rail: .ecash,
             encoded: encoded,
             amount: amount,
@@ -140,22 +146,40 @@ class CashuRequestStore: ObservableObject {
         requests.first(where: { $0.id == id })
     }
 
+    /// Wipe all request intents at a wallet boundary (delete / create / restore).
+    /// Requests belong to the wallet that created them; without this they
+    /// survive `deleteWallet()` and resurface in the next wallet's History.
+    func resetForWalletBoundary() {
+        requests = []
+        currentRequestId = nil
+        userDefaults.removeObject(forKey: storageKey)
+        userDefaults.removeObject(forKey: currentIdKey)
+    }
+
+    /// Re-read persisted state after wallet-boundary defaults were rolled back
+    /// (failed `installCleanWallet`), so memory matches the restored defaults.
+    func reloadFromDefaults() {
+        requests = []
+        currentRequestId = nil
+        load()
+    }
+
 
     private func persist() {
         do {
             let data = try JSONEncoder().encode(requests)
-            UserDefaults.standard.set(data, forKey: storageKey)
-            UserDefaults.standard.set(currentRequestId, forKey: currentIdKey)
+            userDefaults.set(data, forKey: storageKey)
+            userDefaults.set(currentRequestId, forKey: currentIdKey)
         } catch {
             AppLogger.wallet.error("CashuRequestStore persist failed: \(String(describing: error))")
         }
     }
 
     private func load() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
+        if let data = userDefaults.data(forKey: storageKey),
            let decoded = try? JSONDecoder().decode([CashuRequest].self, from: data) {
             requests = decoded
         }
-        currentRequestId = UserDefaults.standard.string(forKey: currentIdKey)
+        currentRequestId = userDefaults.string(forKey: currentIdKey)
     }
 }

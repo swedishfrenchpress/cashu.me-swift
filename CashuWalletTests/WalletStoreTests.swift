@@ -1,6 +1,29 @@
 import XCTest
 @testable import CashuWallet
 
+@MainActor
+final class CashuRequestStoreBoundaryTests: XCTestCase {
+    func testResetForWalletBoundaryClearsRequestsAndDefaults() {
+        let suiteName = "CashuRequestStoreBoundaryTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = CashuRequestStore(userDefaults: defaults)
+        _ = store.createNew(mints: ["https://mint.example.com"], encoded: "creqAexample")
+        XCTAssertFalse(store.requests.isEmpty)
+        XCTAssertNotNil(store.currentRequestId)
+
+        store.resetForWalletBoundary()
+
+        XCTAssertTrue(store.requests.isEmpty)
+        XCTAssertNil(store.currentRequestId)
+        XCTAssertNil(defaults.data(forKey: StorageKeys.cashuRequests))
+        XCTAssertNil(defaults.string(forKey: StorageKeys.cashuRequestsCurrentId))
+        // A fresh store over the same defaults must not resurrect anything.
+        XCTAssertTrue(CashuRequestStore(userDefaults: defaults).requests.isEmpty)
+    }
+}
+
 final class WalletStoreTests: XCTestCase {
     private var store: WalletStore!
 
@@ -197,6 +220,19 @@ final class WalletStoreTests: XCTestCase {
         XCTAssertTrue(store.loadSavedTokens().isEmpty)
     }
 
+    func testRemoveAllWalletDataClearsCashuRequestKeys() {
+        let storage = InMemoryStorage()
+        try! storage.set("payload", forKey: StorageKeys.cashuRequests)
+        try! storage.set("current", forKey: StorageKeys.cashuRequestsCurrentId)
+        try! storage.set(["id1"], forKey: StorageKeys.cashuRequestsProcessedNIP17Ids)
+
+        WalletStore(storage: storage).removeAllWalletData()
+
+        XCTAssertFalse(storage.exists(forKey: StorageKeys.cashuRequests))
+        XCTAssertFalse(storage.exists(forKey: StorageKeys.cashuRequestsCurrentId))
+        XCTAssertFalse(storage.exists(forKey: StorageKeys.cashuRequestsProcessedNIP17Ids))
+    }
+
     // MARK: - Legacy key migration
 
     func testLegacyMintKeyMigratesOnLoad() {
@@ -237,5 +273,49 @@ final class WalletStoreTests: XCTestCase {
             mintUrl: "https://mint.example.com",
             memo: nil
         )
+    }
+}
+
+@MainActor
+final class CashuRequestStoreTests: XCTestCase {
+    private var suiteName: String!
+    private var defaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "CashuRequestStoreTests.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults = nil
+        suiteName = nil
+        super.tearDown()
+    }
+
+    func testCreateNewPreservesEmbeddedPaymentRequestId() {
+        let store = CashuRequestStore(userDefaults: defaults)
+
+        let request = store.createNew(
+            id: "request-id",
+            amount: 42,
+            unit: "sat",
+            mints: ["https://mint.example.com"],
+            memo: "coffee",
+            encoded: "creqAtest"
+        )
+
+        XCTAssertEqual(request.id, "request-id")
+        XCTAssertEqual(store.currentRequestId, "request-id")
+        XCTAssertEqual(store.request(withId: "request-id")?.encoded, "creqAtest")
+
+        store.attachPayment(requestId: "request-id", transactionId: "tx-1", amount: 42)
+        XCTAssertEqual(store.request(withId: "request-id")?.receivedPayments.first?.transactionId, "tx-1")
+
+        let reloaded = CashuRequestStore(userDefaults: defaults)
+        XCTAssertEqual(reloaded.currentRequestId, "request-id")
+        XCTAssertEqual(reloaded.request(withId: "request-id")?.receivedPayments.first?.amount, 42)
     }
 }

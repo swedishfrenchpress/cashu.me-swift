@@ -33,7 +33,7 @@ extension WalletManager {
         
         await refreshBalance()
         await loadTransactions()
-        
+        SentryService.breadcrumb("Token sent", category: "wallet.token")
         return result
     }
 
@@ -59,6 +59,7 @@ extension WalletManager {
         try? await ensureMintTrackedForToken(tokenString)
         await refreshBalance()
         await loadTransactions()
+        SentryService.breadcrumb("Token received", category: "wallet.token")
         return amount
     }
 
