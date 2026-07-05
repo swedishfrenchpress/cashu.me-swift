@@ -91,8 +91,6 @@ struct SettingsView: View {
                 .padding(.horizontal)
             }
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
             .sheet(isPresented: $showBackup) {
                 BackupView()
                     .environmentObject(walletManager)
