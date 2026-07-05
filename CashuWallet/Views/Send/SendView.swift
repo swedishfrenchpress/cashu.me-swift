@@ -39,11 +39,18 @@ struct SendView: View {
         NavigationStack {
             Group {
                 if let token = generatedToken {
-                    tokenDisplayView(token: token)
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .trailing).combined(with: .opacity),
-                            removal: .move(edge: .leading).combined(with: .opacity)
-                        ))
+                    if tokenClaimed {
+                        // Recipient claimed → the same full-screen success the
+                        // pay/receive flows use, replacing the QR entirely.
+                        claimedSuccessView
+                            .transition(.opacity)
+                    } else {
+                        tokenDisplayView(token: token)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                                removal: .move(edge: .leading).combined(with: .opacity)
+                            ))
+                    }
                 } else {
                     sendInputView
                         .transition(.asymmetric(
@@ -53,6 +60,7 @@ struct SendView: View {
                 }
             }
             .animation(.snappy(duration: 0.35), value: generatedToken != nil)
+            .animation(.snappy(duration: 0.35), value: tokenClaimed)
             .navigationBarTitleDisplayMode(.inline)
             // Match the Lightning Invoice screen: float the title + chrome
             // over the black canvas, no secondary gray strip.
@@ -83,7 +91,7 @@ struct SendView: View {
                     }
                 }
 
-                if generatedToken != nil {
+                if generatedToken != nil && !tokenClaimed {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: { showShareSheet = true }) {
                             Image(systemName: "square.and.arrow.up")
@@ -462,6 +470,39 @@ struct SendView: View {
         }
     }
 
+    /// Full-screen success shown once the recipient claims the token — the exact
+    /// same `PaymentStatusView` the pay/receive flows use, so "Claimed" reads
+    /// identically to a sent payment (checkmark → title → detail block → Done).
+    /// Stays until the user taps Done.
+    private var claimedSuccessView: some View {
+        PaymentStatusView(
+            details: claimedSuccessRows,
+            phase: .success,
+            successTitle: "Claimed",
+            onDone: { dismiss() },
+            onRetry: {}
+        )
+    }
+
+    private var claimedSuccessRows: [PaymentStatusView.DetailRow] {
+        var rows: [PaymentStatusView.DetailRow] = [
+            .init(
+                icon: "bitcoinsign",
+                label: "Amount",
+                value: AmountFormatter.sats(amountSats, useBitcoinSymbol: settings.useBitcoinSymbol)
+            ),
+            .init(icon: "arrow.up.arrow.down", label: "Fee", value: "\(tokenFee) sat"),
+        ]
+        if let mintURL = generatedTokenMintURL {
+            rows.append(.init(
+                icon: "bitcoinsign.bank.building",
+                label: "Mint",
+                value: extractMintHost(mintURL)
+            ))
+        }
+        return rows
+    }
+
     private func detailRow(icon: String, label: String, value: String) -> some View {
         HStack {
             Label(label, systemImage: icon)
@@ -637,27 +678,17 @@ struct SendView: View {
                 let isSpent = await walletManager.checkTokenSpendable(token: token)
 
                 if isSpent {
+                    // Flipping `tokenClaimed` swaps the body to the full-screen
+                    // success (owns its own success haptic on appear, so don't
+                    // buzz here). It stays until the user taps Done.
                     await MainActor.run {
                         tokenClaimed = true
                         isCheckingClaim = false
-
-                        // Haptic feedback for success
-                        let generator = UINotificationFeedbackGenerator()
-                        generator.notificationOccurred(.success)
                     }
 
                     // Remove from pending and reload transactions so HistoryView updates
                     // We need to find the pending token ID - it's stored when we create the token
                     await walletManager.markTokenAsClaimed(token: token)
-
-                    await MainActor.run {
-                        // Brief dwell so the user sees the "Claimed" badge
-                        // flip; the home-screen toast carries the celebration
-                        // from there.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            dismiss()
-                        }
-                    }
                     break
                 }
 
@@ -678,17 +709,11 @@ struct SendView: View {
 
         let isSpent = await walletManager.checkTokenSpendable(token: token)
         if isSpent {
+            // Full-screen success owns the screen + its haptic; stays until Done.
             await MainActor.run {
                 tokenClaimed = true
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.success)
             }
             await walletManager.markTokenAsClaimed(token: token)
-            await MainActor.run {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    dismiss()
-                }
-            }
         }
 
         await MainActor.run {

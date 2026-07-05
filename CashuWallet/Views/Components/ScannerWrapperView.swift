@@ -205,19 +205,20 @@ struct ScannerWrapperView: View {
             .onAppear {
                 resolvedQuickFills = quickFills?() ?? []
             }
-            .sheet(isPresented: $navigateToDetail, onDismiss: {
-                // Sheet closed without completing the receive: re-arm the scanner
+            .fullScreenCover(isPresented: $navigateToDetail, onDismiss: {
+                // Closed without completing the receive: re-arm the scanner
                 // so the next QR code is processed.
                 scannedToken = nil
                 scannerModel.reset()
             }) {
                 if let token = scannedToken {
+                    // Full-screen page (not a sheet) so the confirm + success read
+                    // as a brand-new screen with no live camera showing behind.
                     ReceiveTokenDetailView(tokenString: token, onComplete: {
                         // Dismiss the entire scanner sheet
                         dismiss()
                     })
                     .environmentObject(walletManager)
-                    .presentationDetents([.medium, .large])
                     .canvasSheetBackground()
                 }
             }

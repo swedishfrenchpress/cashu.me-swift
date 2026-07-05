@@ -19,81 +19,25 @@ struct ReceiveTokenDetailView: View {
     @State private var tokenLockedToKnownKey = true
     @State private var mintIsKnown = true
 
+    /// Once the token is redeemed, the page is taken over by the shared
+    /// full-screen `PaymentStatusView` success (same as every pay/receive
+    /// flow), replacing the confirm content until the user taps Done.
+    @State private var didReceive = false
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(spacing: 16) {
-                        // Amount
-                        CurrencyAmountDisplay(
-                            sats: tokenAmount,
-                            primary: $settings.amountDisplayPrimary
-                        )
-                        .padding(.top, 12)
-
-                        // Details
-                        VStack(spacing: 0) {
-                            if isLoadingFee {
-                                HStack {
-                                    Label("Fee", systemImage: "arrow.up.arrow.down")
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    ProgressView().scaleEffect(0.8)
-                                }
-                                .font(.subheadline)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 12)
-                            } else {
-                                detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: "\(receiveFee) sat")
-                            }
-                            Divider().padding(.leading)
-                            detailRow(icon: "bitcoinsign.bank.building", label: "Mint", value: shortMintUrl(mintUrl))
-                            if !p2pkPubkeys.isEmpty {
-                                Divider().padding(.leading)
-                                lockedToRow
-                            }
-                        }
-                        .padding(.vertical, 4)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
-                        .padding(.horizontal)
-
-                        if !mintIsKnown && !mintUrl.isEmpty {
-                            newMintBadge
-                        }
-
-                        if let error = errorMessage {
-                            InlineNotice(message: error, severity: .error)
-                                .padding(.horizontal)
-                        }
-                    }
-                    .padding(.bottom, 16)
-                }
-
-                // Buttons
-                VStack(spacing: 12) {
-                    Button(action: receiveToken) {
-                        if isReceiving {
-                            ProgressView()
-                        } else {
-                            Text("Receive")
-                        }
-                    }
-                    .glassButton()
-                    .disabled(isReceiving || !tokenLockedToKnownKey)
-
-                    Button(action: receiveLater) {
-                        Text("Receive Later")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 16)
+            Group {
+            if didReceive {
+                successView
+            } else {
+                confirmContent
             }
+            }
+            .animation(.snappy(duration: 0.35), value: didReceive)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(action: { dismiss() }) {
+                    Button(action: { if didReceive { finish() } else { dismiss() } }) {
                         Image(systemName: "xmark")
                     }
                 }
@@ -106,6 +50,116 @@ struct ReceiveTokenDetailView: View {
         }
         .onAppear {
             parseToken()
+        }
+    }
+
+    /// The confirm step, on the shared `PayFlowScaffold` so its details block
+    /// sits at the SAME locked Y as the success screen (`PaymentStatusView`
+    /// uses the same scaffold). Tapping Receive then morphs the hero
+    /// (amount → checkmark + title) in place, with no layout jump — and the
+    /// rows are hairline-on-canvas, matching every other detail surface.
+    private var confirmContent: some View {
+        PayFlowScaffold {
+            CurrencyAmountDisplay(
+                sats: tokenAmount,
+                primary: $settings.amountDisplayPrimary
+            )
+        } details: {
+            VStack(spacing: 16) {
+                VStack(spacing: 0) {
+                    if isLoadingFee {
+                        HStack {
+                            Label("Fee", systemImage: "arrow.up.arrow.down")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            ProgressView().scaleEffect(0.8)
+                        }
+                        .font(.subheadline)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 14)
+                    } else {
+                        detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: "\(receiveFee) sat")
+                    }
+                    canvasDivider
+                    detailRow(icon: "bitcoinsign.bank.building", label: "Mint", value: shortMintUrl(mintUrl))
+                    if !p2pkPubkeys.isEmpty {
+                        canvasDivider
+                        lockedToRow
+                    }
+                }
+                .padding(.horizontal)
+
+                if !mintIsKnown && !mintUrl.isEmpty {
+                    newMintBadge
+                }
+
+                if let error = errorMessage {
+                    InlineNotice(message: error, severity: .error)
+                        .padding(.horizontal)
+                }
+            }
+        } footer: {
+            VStack(spacing: 12) {
+                Button(action: receiveToken) {
+                    if isReceiving {
+                        ProgressView()
+                    } else {
+                        Text("Receive")
+                    }
+                }
+                .glassButton()
+                .disabled(isReceiving || !tokenLockedToKnownKey)
+
+                Button(action: receiveLater) {
+                    Text("Receive Later")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 16)
+        }
+    }
+
+    /// Full-screen success shown after redemption — the exact same
+    /// `PaymentStatusView` the pay/send flows use, so receiving reads
+    /// identically to a sent payment (checkmark → title → detail block → Done).
+    private var successView: some View {
+        PaymentStatusView(
+            details: successRows,
+            phase: .success,
+            successTitle: "Payment Received!",
+            onDone: { finish() },
+            onRetry: {}
+        )
+    }
+
+    private var successRows: [PaymentStatusView.DetailRow] {
+        var rows: [PaymentStatusView.DetailRow] = [
+            .init(
+                icon: "bitcoinsign",
+                label: "Amount",
+                value: AmountFormatter.sats(tokenAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
+            ),
+            .init(icon: "arrow.up.arrow.down", label: "Fee", value: "\(receiveFee) sat"),
+        ]
+        if !mintUrl.isEmpty {
+            rows.append(.init(
+                icon: "bitcoinsign.bank.building",
+                label: "Mint",
+                value: shortMintUrl(mintUrl)
+            ))
+        }
+        return rows
+    }
+
+    /// Finalize the flow (Done / close after success): hand control back to the
+    /// presenter if it owns dismissal, otherwise dismiss directly.
+    private func finish() {
+        if let onComplete = onComplete {
+            onComplete()
+        } else {
+            dismiss()
         }
     }
 
@@ -149,8 +203,8 @@ struct ReceiveTokenDetailView: View {
             }
         }
         .font(.subheadline)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 14)
     }
 
     private var lockedKeyLabel: String {
@@ -170,8 +224,17 @@ struct ReceiveTokenDetailView: View {
                 .truncationMode(.middle)
         }
         .font(.subheadline)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 14)
+    }
+
+    /// Hairline separator on the flat canvas — matches the pay/receive detail
+    /// surfaces (no boxed background).
+    private var canvasDivider: some View {
+        Rectangle()
+            .fill(Color(.separator))
+            .frame(height: 0.5)
+            .padding(.leading, 28)
     }
 
     func shortMintUrl(_ url: String) -> String {
@@ -233,17 +296,16 @@ struct ReceiveTokenDetailView: View {
             do {
                 let receivedAmount = try await walletManager.receiveTokens(tokenString: tokenString)
                 await MainActor.run {
-                    HapticFeedback.notification(.success)
+                    // Post the home-screen receipt toast (seen after Done), then
+                    // hand the sheet over to the shared full-screen success. It
+                    // owns the success haptic on appear, so don't buzz here.
                     NotificationCenter.default.post(
                         name: .cashuTokenReceived,
                         object: nil,
                         userInfo: ["amount": receivedAmount, "fee": UInt64(0)]
                     )
-                    if let onComplete = onComplete {
-                        onComplete()
-                    } else {
-                        dismiss()
-                    }
+                    isReceiving = false
+                    didReceive = true
                 }
             } catch {
                 await MainActor.run {
