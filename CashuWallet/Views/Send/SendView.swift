@@ -1076,13 +1076,6 @@ struct UnifiedSendView: View {
                 }
                 .padding(.horizontal)
                 .padding(.top, 40)
-
-                if destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                   !recentRecipients.isEmpty {
-                    RecentRecipientsList(recipients: recentRecipients, onTap: applyRecentRecipient)
-                        .padding(.horizontal)
-                        .padding(.top, 24)
-                }
             }
             .padding(.bottom, 24)
         }
@@ -2185,36 +2178,6 @@ struct UnifiedSendView: View {
             .padding(.horizontal, 4)
     }
 
-    // MARK: Recents
-
-    private var recentRecipients: [RecentRecipientsList.Recipient] {
-        var seen = Set<String>()
-        var out: [RecentRecipientsList.Recipient] = []
-        for tx in walletManager.transactions {
-            guard tx.type == .outgoing,
-                  tx.kind == .lightning || tx.kind == .onchain,
-                  let invoice = tx.invoice,
-                  !invoice.isEmpty,
-                  !seen.contains(invoice) else { continue }
-            seen.insert(invoice)
-            out.append(RecentRecipientsList.Recipient(
-                id: tx.id,
-                invoice: invoice,
-                kind: tx.kind,
-                amount: tx.amount,
-                date: tx.date
-            ))
-            if out.count >= 3 { break }
-        }
-        return out
-    }
-
-    private func applyRecentRecipient(_ recipient: RecentRecipientsList.Recipient) {
-        HapticFeedback.selection()
-        destination = recipient.invoice
-        advanceNow(raw: recipient.invoice)
-    }
-
     // MARK: Action row + input actions
 
     private func actionRow(
@@ -2781,7 +2744,7 @@ struct MeltView: View {
         }
     }
 
-    // MARK: - Launchpad (clipboard chip + recent recipients)
+    // MARK: - Launchpad (clipboard chip)
 
     @ViewBuilder
     private var launchpadSection: some View {
@@ -2799,14 +2762,6 @@ struct MeltView: View {
                             dismissedClipboardSuggestion = true
                         }
                     }
-                )
-            }
-
-            if requestInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               !recentRecipients.isEmpty {
-                RecentRecipientsList(
-                    recipients: recentRecipients,
-                    onTap: applyRecentRecipient
                 )
             }
         }
@@ -2846,28 +2801,6 @@ struct MeltView: View {
         case .unrecognized:
             return "Unrecognized — try a Lightning address, invoice, or Bitcoin address"
         }
-    }
-
-    private var recentRecipients: [RecentRecipientsList.Recipient] {
-        var seen = Set<String>()
-        var out: [RecentRecipientsList.Recipient] = []
-        for tx in walletManager.transactions {
-            guard tx.type == .outgoing,
-                  tx.kind == .lightning || tx.kind == .onchain,
-                  let invoice = tx.invoice,
-                  !invoice.isEmpty,
-                  !seen.contains(invoice) else { continue }
-            seen.insert(invoice)
-            out.append(RecentRecipientsList.Recipient(
-                id: tx.id,
-                invoice: invoice,
-                kind: tx.kind,
-                amount: tx.amount,
-                date: tx.date
-            ))
-            if out.count >= 3 { break }
-        }
-        return out
     }
 
     private var amountEntrySection: some View {
@@ -3127,28 +3060,6 @@ struct MeltView: View {
         if PaymentRequestDecoder.amountLocked(result) {
             getQuote()
         }
-    }
-
-    private func applyRecentRecipient(_ recipient: RecentRecipientsList.Recipient) {
-        HapticFeedback.selection()
-        let result = PaymentRequestDecoder.decode(recipient.invoice)
-        // Reuse the same routing as suggestion tap, but never auto-quote: the
-        // user is reusing a destination at a (likely) new amount.
-        if let suggested = PaymentRequestDecoder.suggestedMode(result),
-           suggested != meltMode,
-           suggested != .onchain || supportsOnchainMelt {
-            withAnimation(.snappy) { meltMode = suggested }
-        }
-        switch result {
-        case .onchain:
-            requestInput = PaymentRequestParser.normalizeBitcoinRequest(recipient.invoice)
-        case .bolt11, .bolt12:
-            requestInput = PaymentRequestDecoder.encodedLightningRequest(from: recipient.invoice)
-                ?? PaymentRequestParser.normalizeLightningRequest(recipient.invoice)
-        case .lightningAddress, .cashuPaymentRequest, .unrecognized:
-            requestInput = recipient.invoice
-        }
-        errorMessage = nil
     }
 
     private func getQuote() {
