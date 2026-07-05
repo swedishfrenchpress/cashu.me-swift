@@ -9,7 +9,7 @@ struct ReceiveTokenDetailView: View {
     @ObservedObject private var settings = SettingsManager.shared
 
     @State private var decodedToken: Token?
-    @State private var tokenAmount: UInt64 = 0
+    @State private var tokenAmount: UInt64
     @State private var receiveFee: UInt64 = 0
     @State private var mintUrl: String = ""
     @State private var errorMessage: String?
@@ -25,6 +25,20 @@ struct ReceiveTokenDetailView: View {
     /// side (`SendView.paymentPhase`).
     @State private var phase: PaymentStatusView.Phase?
 
+    init(tokenString: String, onComplete: (() -> Void)? = nil) {
+        self.tokenString = tokenString
+        self.onComplete = onComplete
+        // Parse the amount eagerly so the hero shows its FINAL value on frame 1.
+        // Token.decode is a pure Cdk call (no wallet/settings env), so this is
+        // safe in init. Deriving it here avoids the 0 → N flip that parseToken()
+        // in .onAppear would otherwise make, which fires CurrencyAmountDisplay's
+        // .animation(value: sats) while PayFlowScaffold's GeometryReader is still
+        // resolving — sliding the hero in from the top-left. Env-dependent state
+        // (mintIsKnown / tokenLockedToKnownKey / fee) still resolves in onAppear.
+        let amount = (try? Token.decode(encodedToken: tokenString).value().value) ?? 0
+        _tokenAmount = State(initialValue: amount)
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -35,6 +49,10 @@ struct ReceiveTokenDetailView: View {
             }
             }
             .animation(.snappy(duration: 0.35), value: phase)
+            // Opacity-only fade on screen entry (once). Sits OUTSIDE the phase-morph
+            // scope above; each .animation keys on a different value, so the entry
+            // fade and the confirm→success morph never cross-animate each other.
+            .screenEntryFade()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -240,10 +258,9 @@ struct ReceiveTokenDetailView: View {
         do {
             let token = try walletManager.decodeToken(tokenString: tokenString)
             self.decodedToken = token
-            // Token.value() is the canonical "total value of the token" API;
-            // proofsSimple() is documented as "simplified - no keyset filtering"
-            // and returns 0 / empty for some token formats.
-            self.tokenAmount = try token.value().value
+            // `tokenAmount` is parsed eagerly in init (same Token.decode path), so
+            // the hero already holds the final value — no reassignment here, which
+            // would be a no-op at best and re-trigger the entry animation at worst.
             let mint = try token.mintUrl()
             self.mintUrl = mint.url
             self.mintIsKnown = walletManager.isMintKnown(url: mint.url)

@@ -274,6 +274,14 @@ struct PayFlowScaffold<TopAccessory: View, Hero: View, Details: View, Footer: Vi
                             .padding(.top, Self.heroDetailsGap)
                     }
                     .frame(maxWidth: .infinity)
+                    // Resolve the anchored column's geometry as one rigid unit before it
+                    // combines with the parent. Without this, when the GeometryReader's
+                    // size goes 0 → real on first layout, the hero/details interpolate
+                    // from the (0,0) origin under any live ancestor .animation scope
+                    // (this screen's value: phase, or PaymentStatusView's value: phaseKey)
+                    // — sliding the amount hero in from the top-left. Isolating geometry
+                    // leaves opacity/scale transitions (the spinner→check morph) untouched.
+                    .geometryGroup()
                 }
                 footer
             }
