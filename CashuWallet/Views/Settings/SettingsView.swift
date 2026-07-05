@@ -13,17 +13,9 @@ struct SettingsView: View {
     @State private var showMintPicker = false
     @State private var showCurrencySheet = false
 
-    // Nostr Key Management
-    @State private var showNsec = false
-    @State private var copiedNsec = false
-    @State private var showImportNsec = false
-    @State private var importNsecText = ""
-    @State private var showGenerateKeyConfirm = false
-    @State private var showResetKeyConfirm = false
-    @State private var nostrKeyError: String?
-    @State private var relayInput = ""
-    @State private var relayError: String?
-    @State private var copiedRelay: String?
+    // Nostr key + relay state is owned by the sections themselves
+    // (NostrKeysSettingsSection / NostrRelaysSettingsSection), matching the
+    // self-contained P2PKSettingsSection.
     @State private var walletActionError: String?
 
     var body: some View {
@@ -297,24 +289,17 @@ struct SettingsView: View {
     private var nostrDetailView: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                SettingsSectionGroup("Keys") {
-                    NostrKeysSettingsSection(
-                        showNsec: $showNsec,
-                        copiedNsec: $copiedNsec,
-                        showImportNsec: $showImportNsec,
-                        importNsecText: $importNsecText,
-                        showGenerateKeyConfirm: $showGenerateKeyConfirm,
-                        showResetKeyConfirm: $showResetKeyConfirm,
-                        nostrKeyError: $nostrKeyError
-                    )
-                }
-                SettingsSectionGroup("Relays") {
-                    NostrRelaysSettingsSection(
-                        relayInput: $relayInput,
-                        relayError: $relayError,
-                        copiedRelay: $copiedRelay
-                    )
-                }
+                Text("Nostr powers your Lightning address, npub.cash requests, and encrypted backups.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 8)
+                    .padding(.bottom, 28)
+
+                NostrKeysSettingsSection()
+                NostrRelaysSettingsSection()
             }
             .padding(.horizontal)
             .padding(.bottom, 32)

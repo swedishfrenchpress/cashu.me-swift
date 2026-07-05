@@ -549,8 +549,13 @@ section. Defined in `HistoryView.swift` → `cashuRequestRow(request:, staggerIn
 - **TextField** (Send/Receive): bare `TextField("placeholder", text:)` with no
   `.textFieldStyle`. Placement provides the affordance — typically inside a
   `.thinMaterial` `RoundedRectangle(cornerRadius: 14)` container.
-- **TextField** (Settings, e.g. Nostr relay): `.textFieldStyle(.roundedBorder)`
-  — the system rounded style. Settings is the one place this is appropriate.
+- **TextField** (Settings): historically `.textFieldStyle(.roundedBorder)` — the
+  system rounded style. *Carve-out (2026-07-05): the Nostr relay field dropped
+  `.roundedBorder` for the `.thinMaterial`/`liquidGlass`
+  `RoundedRectangle(cornerRadius: 14)` input used by `ImportP2PKSheet`, so the
+  Nostr settings hub reads as one family with Locked Ecash. New settings inputs
+  should follow that glass field, not `.roundedBorder`.* Any remaining
+  `.roundedBorder` fields are legacy.
 - **Amount entry**: never a raw TextField. The dedicated
   `CashuWallet/Views/Components/AmountEntryView.swift` view owns this — a
   full-screen canvas with `CurrencyAmountDisplay`, fiat-primary toggle, mint
