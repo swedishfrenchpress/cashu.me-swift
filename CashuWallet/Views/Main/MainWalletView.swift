@@ -29,15 +29,7 @@ struct MainWalletView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 0) {
-                    recentSection
-                        .padding(.top, 8)
-                        .padding(.horizontal, 16)
-
-                    // Tail spacer so the last row can scroll under the
-                    // Liquid Glass tab bar without sitting flush against it.
-                    Color.clear.frame(height: 32)
-                }
+                recentContent
             }
             .scrollIndicators(.hidden)
             .mask(scrollFadeMask)
@@ -372,36 +364,59 @@ struct MainWalletView: View {
     // MARK: - Recent Activity
 
     @ViewBuilder
-    private var recentSection: some View {
+    private var recentContent: some View {
         let items = recentItems
+        if items.isEmpty {
+            // Same shared component, size, and centered placement as the
+            // History empty state, but with its own tray icon and copy
+            // (recent-activity framing vs. History's clock + "history"). No
+            // "Recent" header here: with nothing to label it's redundant, and
+            // dropping it matches History's clean full-screen empty state.
+            NativeEmptyState(
+                title: "No activity yet",
+                systemImage: "tray",
+                description: "Your recent payments will show up here."
+            )
+            .containerRelativeFrame(.vertical)
+            .padding(.horizontal, 16)
+        } else {
+            VStack(spacing: 0) {
+                recentList(items)
+                    .padding(.top, 8)
+                    .padding(.horizontal, 16)
+
+                // Tail spacer so the last row can scroll under the
+                // Liquid Glass tab bar without sitting flush against it.
+                Color.clear.frame(height: 32)
+            }
+        }
+    }
+
+    private func recentList(_ items: [HomeItem]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader("Recent")
 
-            if items.isEmpty {
-                emptyRecentRow
-            } else {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    row(for: item)
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                row(for: item)
 
-                    if index < items.count - 1 {
-                        CanvasDivider()
-                    }
+                if index < items.count - 1 {
+                    CanvasDivider()
                 }
-
-                Button(action: onViewAllHistory) {
-                    HStack(spacing: 4) {
-                        Text("View all activity")
-                        Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
-                    }
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Switches to the History tab")
             }
+
+            Button(action: onViewAllHistory) {
+                HStack(spacing: 4) {
+                    Text("View all activity")
+                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                }
+                .font(.body.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Switches to the History tab")
         }
     }
 
@@ -415,15 +430,6 @@ struct MainWalletView: View {
             .padding(.horizontal, 4)
             .padding(.top, 16)
             .padding(.bottom, 14)
-    }
-
-    private var emptyRecentRow: some View {
-        NativeEmptyState(
-            title: "No activity yet",
-            systemImage: "clock.arrow.circlepath",
-            description: "Your activity will show up here.",
-            style: .compact
-        )
     }
 
     // MARK: - Recent items pipeline (mirrors HistoryView, capped at 5)

@@ -380,10 +380,14 @@ struct HistoryView: View {
                 description: "No transactions match this filter."
             )
         } else {
+            // Shares the Wallet empty state's size + centered placement (one
+            // component), but keeps its own clock icon and history-specific
+            // copy so the two screens read as deliberate siblings, not
+            // accidental duplicates.
             NativeEmptyState(
-                title: "No activity yet",
+                title: "No history yet",
                 systemImage: "clock.arrow.circlepath",
-                description: "Your first payment will show up here."
+                description: "Your payments will appear here."
             )
         }
     }

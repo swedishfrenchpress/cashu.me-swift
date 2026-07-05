@@ -3272,41 +3272,19 @@ struct MintSelectorSheet: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "bitcoinsign.bank.building")
-                .font(.title)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-
-            Text("No Mints Available")
-                .font(.headline)
-
-            Text("Add a mint from Settings to get started")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
+        NativeEmptyState(
+            title: "No Mints Available",
+            systemImage: "bitcoinsign.bank.building",
+            description: "Add a mint from Settings to get started."
+        )
     }
 
     private var noCompatibleMintsView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.title)
-                .foregroundStyle(.orange)
-                .accessibilityHidden(true)
-
-            Text("No Compatible Mints")
-                .font(.headline)
-
-            if let paymentMethod {
-                Text("None of your mints support \(paymentMethod.displayName) payments.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .padding()
+        NativeEmptyState(
+            title: "No Compatible Mints",
+            systemImage: "exclamationmark.triangle",
+            description: paymentMethod.map { "None of your mints support \($0.displayName) payments." }
+        )
     }
 
     private var displayMints: [MintInfo] {
