@@ -1049,7 +1049,11 @@ struct CashuPaymentRequestPayView: View {
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
                 withAnimation {
-                    paymentPhase = .failure(message: walletMessage.text, isCaution: walletMessage.severity == .caution)
+                    paymentPhase = .failure(
+                        message: walletMessage.text,
+                        isCaution: walletMessage.severity == .caution,
+                        isTerminal: walletMessage.recoverability == .terminal
+                    )
                 }
             }
 
@@ -1095,7 +1099,11 @@ struct CashuPaymentRequestPayView: View {
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
                 withAnimation {
-                    paymentPhase = .failure(message: walletMessage.text, isCaution: walletMessage.severity == .caution)
+                    paymentPhase = .failure(
+                        message: walletMessage.text,
+                        isCaution: walletMessage.severity == .caution,
+                        isTerminal: walletMessage.recoverability == .terminal
+                    )
                 }
             }
 

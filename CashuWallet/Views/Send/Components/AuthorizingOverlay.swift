@@ -10,7 +10,16 @@ struct PaymentStatusView: View {
         case processing
         case success
         /// `isCaution` renders an amber warning (e.g. MintSettling) instead of a red X.
-        case failure(message: String, isCaution: Bool = false)
+        /// `isTerminal` marks a permanent outcome (already paid / issued) so the CTA
+        /// becomes "Done" instead of a futile "Try Again".
+        case failure(message: String, isCaution: Bool = false, isTerminal: Bool = false)
+    }
+
+    /// A custom primary CTA for the failure state (e.g. "Choose another mint"). When
+    /// nil, failure falls back to "Done" (terminal) or "Try Again" (retryable).
+    struct FailureCTA {
+        let title: String
+        let action: () -> Void
     }
 
     /// A preserved payment fact rendered as one detail row (Amount / Mint / Method / Max fee).
@@ -27,6 +36,9 @@ struct PaymentStatusView: View {
     var processingTitle: String = "Authorizing…"
     var successTitle: String = "Payment Sent!"
     var failureTitle: String = "Payment Failed"
+
+    /// Optional custom failure CTA (overrides the default Done / Try Again button).
+    var failureCTA: FailureCTA? = nil
 
     /// Success → dismiss/complete (Done tap). Failure → back to confirm (Try Again).
     let onDone: () -> Void
@@ -49,7 +61,7 @@ struct PaymentStatusView: View {
     }
 
     private var failureMessage: String? {
-        if case .failure(let message, _) = phase, !message.isEmpty { return message }
+        if case .failure(let message, _, _) = phase, !message.isEmpty { return message }
         return nil
     }
 
@@ -115,7 +127,7 @@ struct PaymentStatusView: View {
                     .foregroundStyle(.green)
                     .symbolEffect(.bounce, value: phaseKey)
                     .transition(.scale(scale: 0.7).combined(with: .opacity))
-            case .failure(_, let isCaution):
+            case .failure(_, let isCaution, _):
                 Image(systemName: isCaution ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
                     .font(.system(size: 64))
                     .foregroundStyle(isCaution ? .orange : .red)
@@ -139,9 +151,17 @@ struct PaymentStatusView: View {
         case .success:
             Button(action: onDone) { Text("Done") }
                 .glassButton()
-        case .failure:
-            Button(action: onRetry) { Text("Try Again") }
-                .glassButton()
+        case .failure(_, _, let isTerminal):
+            if let failureCTA {
+                Button(action: failureCTA.action) { Text(failureCTA.title) }
+                    .glassButton()
+            } else if isTerminal {
+                Button(action: onDone) { Text("Done") }
+                    .glassButton()
+            } else {
+                Button(action: onRetry) { Text("Try Again") }
+                    .glassButton()
+            }
         }
     }
 
@@ -174,7 +194,7 @@ struct PaymentStatusView: View {
         switch newPhase {
         case .success:
             HapticFeedback.notification(.success)
-        case .failure(_, let isCaution):
+        case .failure(_, let isCaution, _):
             HapticFeedback.notification(isCaution ? .warning : .error)
         case .processing:
             break

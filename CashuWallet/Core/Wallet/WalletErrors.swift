@@ -7,12 +7,23 @@ import Cdk
 /// should render it at. The text follows the contract **{what broke}. {what to
 /// try next}** in the app's quiet, native voice.
 struct WalletMessage {
+    /// Whether re-attempting the identical action could plausibly succeed. `.terminal`
+    /// marks a permanent outcome (already paid, already issued) where a retry is futile,
+    /// so the UI can offer "Done" instead of "Try Again".
+    enum Recoverability { case retryable, terminal }
+
     let text: String
     let severity: ErrorSeverity
+    var recoverability: Recoverability = .retryable
 
     static func error(_ text: String) -> WalletMessage { .init(text: text, severity: .error) }
     static func caution(_ text: String) -> WalletMessage { .init(text: text, severity: .caution) }
     static func info(_ text: String) -> WalletMessage { .init(text: text, severity: .info) }
+
+    /// Mark this message as a permanent outcome that a retry cannot change.
+    func terminal() -> WalletMessage {
+        WalletMessage(text: text, severity: severity, recoverability: .terminal)
+    }
 }
 
 // MARK: - Error Types
@@ -121,13 +132,13 @@ enum WalletErrorMessage {
             || normalized.contains("already minted")
             || normalized.contains("quote is issued")
             || normalized.contains("tokens already issued") {
-            return .error("Ecash has already been issued for this quote.")
+            return .error("Ecash has already been issued for this quote.").terminal()
         }
 
         if normalized.contains("already paid")
             || normalized.contains("request already paid")
             || normalized.contains("invoice already paid") {
-            return .error("This invoice has already been paid.")
+            return .error("This invoice has already been paid.").terminal()
         }
 
         if normalized.contains("not paid")
@@ -163,6 +174,15 @@ enum WalletErrorMessage {
             return .caution("The fee is higher than this wallet allows. Lower the amount or try another mint.")
         }
 
+        // Raw CDK "Incorrect quote amount": the mint declined the amount for this quote
+        // (amount drift / MPP / amountless mismatch). Curate it into the app's voice
+        // rather than leaking the jargon; switching mints is the reliable recovery.
+        if normalized.contains("incorrect quote amount")
+            || normalized.contains("quote amount mismatch")
+            || normalized.contains("mismatched quote amount") {
+            return .error("The mint declined the payment amount. Try again or use another mint.")
+        }
+
         if normalized.contains("insufficient")
             || normalized.contains("not enough")
             || normalized.contains("no spendable")
@@ -175,7 +195,7 @@ enum WalletErrorMessage {
             || normalized.contains("proof already used")
             || normalized.contains("already redeemed")
             || normalized.contains("proofs are spent") {
-            return .error("This token was already redeemed.")
+            return .error("This token was already redeemed.").terminal()
         }
 
         if normalized.contains("token not verified")

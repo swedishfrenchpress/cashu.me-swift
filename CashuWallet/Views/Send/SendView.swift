@@ -872,6 +872,7 @@ struct UnifiedSendView: View {
     @State private var errorMessage: String?
     @State private var errorSeverity: ErrorSeverity = .error
     @State private var errorShowsMintAction = false
+    @State private var errorIsTerminal = false
     @State private var inputHint: String?
     @State private var autoAdvanceTask: Task<Void, Never>?
     /// Set when the user taps the pill to edit: auto-advance stays suppressed while
@@ -883,6 +884,7 @@ struct UnifiedSendView: View {
         errorMessage = message
         errorSeverity = severity
         errorShowsMintAction = false
+        errorIsTerminal = false
     }
 
     private func presentError(from error: Error) {
@@ -890,6 +892,7 @@ struct UnifiedSendView: View {
         errorMessage = walletMessage.text
         errorSeverity = walletMessage.severity
         errorShowsMintAction = error.isInsufficientBalanceError
+        errorIsTerminal = walletMessage.recoverability == .terminal
     }
 
     /// Secondary line under an insufficient-balance notice: what's actually here.
@@ -914,6 +917,23 @@ struct UnifiedSendView: View {
     /// Another compatible mint exists to fall back to when this one is short.
     private var canSwitchMintForBalance: Bool {
         errorShowsMintAction && meltCompatibleMints.count > 1
+    }
+
+    /// A melt failure is terminal (offer "Done", not a futile retry) when the error is a
+    /// permanent fact, or when its only recovery — switching mints — isn't available.
+    private var meltFailureIsTerminal: Bool {
+        errorIsTerminal || (errorShowsMintAction && !canSwitchMintForBalance)
+    }
+
+    /// "Choose another mint" recovery for an insufficient-balance quote failure, when a
+    /// compatible mint exists to fall back to. Only offered on the confirm step, where
+    /// picking a mint re-fetches the quote.
+    private var meltSwitchMintCTA: PaymentStatusView.FailureCTA? {
+        guard case .melt = locked, step == .confirm, canSwitchMintForBalance else { return nil }
+        return .init(title: "Choose another mint") {
+            HapticFeedback.selection()
+            showingMintPicker = true
+        }
     }
 
     // Routes that genuinely leave this flow + scanner / mint picker / empty state
@@ -1390,9 +1410,9 @@ struct UnifiedSendView: View {
                     } footer: {
                         EmptyView()
                     }
-                } else if let errorMessage {
-                    meltDeadEndState(errorMessage)
                 } else {
+                    // Quote fetch in flight; a fetch failure routes to the shared
+                    // full-screen status (see `statusPhase`), not a bespoke dead-end.
                     ProgressView()
                 }
             }
@@ -1406,55 +1426,8 @@ struct UnifiedSendView: View {
                 .disabled(isWorking || !hasSufficientBalance(for: quote))
                 .padding(.horizontal)
                 .padding(.bottom, 16)
-            } else if canSwitchMintForBalance {
-                Button {
-                    HapticFeedback.selection()
-                    showingMintPicker = true
-                } label: {
-                    Text("Choose another mint")
-                }
-                .glassButton()
-                .padding(.horizontal)
-                .padding(.bottom, 16)
-            } else if errorMessage != nil {
-                Button {
-                    HapticFeedback.selection()
-                    fetchMeltQuote()
-                } label: {
-                    Text("Try again")
-                }
-                .glassButton()
-                .padding(.horizontal)
-                .padding(.bottom, 16)
             }
         }
-    }
-
-    /// Centered "can't proceed" state for the melt-confirm dead-end (no quote could
-    /// be built — e.g. insufficient balance). Mirrors `noBalanceState`'s composition
-    /// so it reads as an intentional, balanced state rather than a stray line; the
-    /// recovery action lives in the bottom CTA.
-    private func meltDeadEndState(_ message: String) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 38))
-                .foregroundStyle(Color(.systemRed))
-
-            VStack(spacing: 6) {
-                Text(message.hasSuffix(".") ? String(message.dropLast()) : message)
-                    .font(.title3.weight(.semibold))
-                    .multilineTextAlignment(.center)
-
-                if errorShowsMintAction, let detail = meltInsufficientDetail {
-                    Text(detail)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 24)
     }
 
     private var meltCompatibleMints: [MintInfo] {
@@ -1541,8 +1514,27 @@ struct UnifiedSendView: View {
         case .sending: return .processing
         case .sent:    return .success
         case .failed:
-            return .failure(message: errorMessage ?? "Payment failed", isCaution: errorSeverity == .caution)
-        default:       return nil
+            let terminal: Bool
+            if case .melt = locked { terminal = meltFailureIsTerminal } else { terminal = errorIsTerminal }
+            return .failure(
+                message: errorMessage ?? "Payment failed",
+                isCaution: errorSeverity == .caution,
+                isTerminal: terminal
+            )
+        case .confirm:
+            // A melt quote that couldn't be built (already paid / expired / not enough
+            // balance / …) surfaces on the shared full-screen failure — same icon slot,
+            // position, and morph as processing/success — instead of a bespoke dead-end.
+            if case .melt = locked, meltQuote == nil, let errorMessage {
+                return .failure(
+                    message: errorMessage,
+                    isCaution: errorSeverity == .caution,
+                    isTerminal: meltFailureIsTerminal
+                )
+            }
+            return nil
+        default:
+            return nil
         }
     }
 
@@ -1570,6 +1562,15 @@ struct UnifiedSendView: View {
                 if let mint = mintInfo(for: quote) ?? activeMeltMint {
                     rows.append(.init(icon: "bitcoinsign.bank.building", label: "Mint", value: mint.name))
                 }
+            } else if errorShowsMintAction, let mint = activeMeltMint {
+                // Insufficient-balance failure (no quote to summarise): show the mint and
+                // what's actually there, so the shortfall reads as a fact, not a scold.
+                rows.append(.init(icon: "bitcoinsign.bank.building", label: "Mint", value: mint.name))
+                rows.append(.init(
+                    icon: "banknote",
+                    label: "Balance",
+                    value: AmountFormatter.sats(mint.balance, useBitcoinSymbol: settings.useBitcoinSymbol)
+                ))
             }
         case .cashuRequest(let creq):
             if let amount = paymentAmountForCreq {
@@ -1591,8 +1592,17 @@ struct UnifiedSendView: View {
         return PaymentStatusView(
             details: rows,
             phase: phase,
+            failureCTA: meltSwitchMintCTA,
             onDone: onClose,
-            onRetry: { withAnimation { step = .confirm } }
+            onRetry: {
+                // A quote-fetch failure stays on `.confirm` — re-run the quote. A pay
+                // failure (`.failed`) drops back to the confirm screen with its quote.
+                if step == .confirm {
+                    fetchMeltQuote()
+                } else {
+                    withAnimation { step = .confirm }
+                }
+            }
         )
     }
 
@@ -1634,7 +1644,9 @@ struct UnifiedSendView: View {
                 meltQuote = quote
                 if let resolved = mintInfo(for: quote) { selectedMint = resolved }
             } catch {
-                presentError(from: error)
+                // Animate the confirm → full-screen failure swap (statusPhase flips
+                // without a `step` change, so the implicit step animation won't fire).
+                withAnimation(.snappy(duration: 0.35)) { presentError(from: error) }
             }
         }
     }
@@ -3164,7 +3176,11 @@ struct MeltView: View {
                 // if the user taps Try Again.
                 presentError(walletMessage.text, severity: walletMessage.severity)
                 withAnimation {
-                    paymentPhase = .failure(message: walletMessage.text, isCaution: walletMessage.severity == .caution)
+                    paymentPhase = .failure(
+                        message: walletMessage.text,
+                        isCaution: walletMessage.severity == .caution,
+                        isTerminal: walletMessage.recoverability == .terminal
+                    )
                 }
             }
             isPaying = false
