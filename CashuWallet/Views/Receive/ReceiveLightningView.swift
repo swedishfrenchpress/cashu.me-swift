@@ -41,7 +41,7 @@ struct ReceiveLightningView: View {
                         .transition(.opacity)
                 } else if let quote = mintQuote {
                     requestDisplayView(quote: quote)
-                        .transition(.asymmetric(
+                        .transition(reduceMotion ? .opacity : .asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
                             removal: .opacity
                         ))
@@ -52,7 +52,7 @@ struct ReceiveLightningView: View {
                         .transition(.opacity)
                 } else {
                     amountInputView
-                        .transition(.asymmetric(
+                        .transition(reduceMotion ? .opacity : .asymmetric(
                             insertion: .move(edge: .leading).combined(with: .opacity),
                             removal: .move(edge: .leading).combined(with: .opacity)
                         ))
@@ -660,7 +660,7 @@ struct ReceiveLightningView: View {
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.green)
-                .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
             } else if isCheckingPayment || isMinting {
                 HStack(spacing: 6) {
                     ProgressView()
@@ -693,7 +693,7 @@ struct ReceiveLightningView: View {
                 // small worded green success badge).
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
-                .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
             } else {
                 HStack(spacing: 6) {
                     Image(systemName: "clock")

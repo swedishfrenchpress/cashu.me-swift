@@ -162,7 +162,7 @@ struct ReceiveTokenDetailView: View {
             successTitle: "Payment Received!",
             failureTitle: "Couldn't Receive",
             onDone: { finish() },
-            onRetry: { withAnimation { self.phase = nil } }   // back to the confirm screen
+            onRetry: { withAnimation(.smooth(duration: 0.3)) { self.phase = nil } }   // back to the confirm screen
         )
     }
 
@@ -303,7 +303,7 @@ struct ReceiveTokenDetailView: View {
         }
 
         errorMessage = nil
-        withAnimation { phase = .processing }
+        withAnimation(.smooth(duration: 0.3)) { phase = .processing }
         Task {
             // Minimum on-screen time for the "Claiming…" spinner, run
             // concurrently with the real redeem so we wait max(network, 0.5s) —
@@ -322,7 +322,7 @@ struct ReceiveTokenDetailView: View {
                         object: nil,
                         userInfo: ["amount": receivedAmount, "fee": UInt64(0)]
                     )
-                    withAnimation { phase = .success }
+                    withAnimation(.smooth(duration: 0.3)) { phase = .success }
                 }
             } catch {
                 try? await minHold   // let the spinner settle before the failure
@@ -332,7 +332,7 @@ struct ReceiveTokenDetailView: View {
                     // side — not the inline confirm-screen notice. PaymentStatusView
                     // owns the error haptic, so don't buzz here.
                     let message = error.walletMessage
-                    withAnimation {
+                    withAnimation(.smooth(duration: 0.3)) {
                         phase = .failure(
                             message: message.text,
                             isCaution: message.severity == .caution,

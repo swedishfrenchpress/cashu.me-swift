@@ -168,6 +168,8 @@ struct MintDetailView: View {
                     .truncationMode(.middle)
                 Image(systemName: copiedUrl ? "checkmark" : "doc.on.doc")
                     .font(.caption2)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(.snappy(duration: 0.18), value: copiedUrl)
             }
             .foregroundStyle(.secondary)
         }

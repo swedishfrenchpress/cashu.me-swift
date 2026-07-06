@@ -202,7 +202,7 @@ struct OnboardingView: View {
                 ErrorBannerView(message: "Couldn't start the wallet. \(error)", severity: .error)
                     .padding(.horizontal)
                     .padding(.bottom, 8)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
 
             if let error = errorMessage {
@@ -456,7 +456,7 @@ struct OnboardingView: View {
                     if let error = errorMessage {
                         ErrorBannerView(message: error, severity: .error)
                             .padding(.horizontal)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                     }
 
                     Button(action: runICloudRestore) {
@@ -802,7 +802,7 @@ struct OnboardingView: View {
                     customMintInputRow
                         .padding(.horizontal, 28)
                         .padding(.top, 12)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                 } else {
                     Button(action: {
                         HapticFeedback.selection()
@@ -1090,7 +1090,7 @@ struct OnboardingView: View {
             if let error = errorMessage {
                 ErrorBannerView(message: error, severity: .error)
                     .padding(.horizontal)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
             }
 
             stagger(appeared: restoreInputAppeared, index: 1) {

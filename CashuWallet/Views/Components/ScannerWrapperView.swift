@@ -1044,7 +1044,7 @@ struct CashuPaymentRequestPayView: View {
         isPaying = true
         errorMessage = nil
         HapticFeedback.impact(.medium)
-        withAnimation { paymentPhase = .processing }
+        withAnimation(.smooth(duration: 0.3)) { paymentPhase = .processing }
 
         Task { @MainActor in
             do {
@@ -1055,12 +1055,12 @@ struct CashuPaymentRequestPayView: View {
                 )
                 // The consistency fix: every creq payment now lands on the shared
                 // full-screen success screen, same as Lightning/on-chain.
-                withAnimation { paymentPhase = .success }
+                withAnimation(.smooth(duration: 0.3)) { paymentPhase = .success }
             } catch {
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
-                withAnimation {
+                withAnimation(.smooth(duration: 0.3)) {
                     paymentPhase = .failure(
                         message: walletMessage.text,
                         isCaution: walletMessage.severity == .caution,
@@ -1079,7 +1079,7 @@ struct CashuPaymentRequestPayView: View {
         isPaying = true
         errorMessage = nil
         HapticFeedback.impact(.medium)
-        withAnimation { paymentPhase = .processing }
+        withAnimation(.smooth(duration: 0.3)) { paymentPhase = .processing }
 
         Task { @MainActor in
             do {
@@ -1089,11 +1089,11 @@ struct CashuPaymentRequestPayView: View {
                     targetMintURL: targetMintURL,
                     onStage: { _ in }
                 )
-                withAnimation { paymentPhase = .success }
+                withAnimation(.smooth(duration: 0.3)) { paymentPhase = .success }
             } catch let topUp as NeedsExternalTopUp {
                 // No held mint can fund it — clear the status screen first, then show
                 // the Lightning top-up invoice sheet.
-                withAnimation { paymentPhase = nil }
+                withAnimation(.smooth(duration: 0.3)) { paymentPhase = nil }
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 topUpContext = TopUpContext(
                     summary: request,
@@ -1105,12 +1105,12 @@ struct CashuPaymentRequestPayView: View {
                 let text = "Still settling — your balance will update shortly. Try again in a moment."
                 errorMessage = text
                 errorSeverity = .caution
-                withAnimation { paymentPhase = .failure(message: text, isCaution: true) }
+                withAnimation(.smooth(duration: 0.3)) { paymentPhase = .failure(message: text, isCaution: true) }
             } catch {
                 let walletMessage = error.walletMessage
                 errorMessage = walletMessage.text
                 errorSeverity = walletMessage.severity
-                withAnimation {
+                withAnimation(.smooth(duration: 0.3)) {
                     paymentPhase = .failure(
                         message: walletMessage.text,
                         isCaution: walletMessage.severity == .caution,
@@ -1150,7 +1150,7 @@ struct CashuPaymentRequestPayView: View {
                 onComplete?()
                 dismiss()
             },
-            onRetry: { withAnimation { paymentPhase = nil } }
+            onRetry: { withAnimation(.smooth(duration: 0.3)) { paymentPhase = nil } }
         )
     }
 

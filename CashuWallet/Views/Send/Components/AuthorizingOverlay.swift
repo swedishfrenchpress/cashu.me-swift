@@ -125,18 +125,23 @@ struct PaymentStatusView: View {
             switch phase {
             case .processing:
                 SpinnerRing()
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9)))
             case .success:
+                // Blur-to-sharp materialize (DESIGN.md §6 carve-out): the check comes
+                // *into focus* as it scales in, riding the same `.smooth(0.3)`. Reduce
+                // Motion drops both blur and scale to a plain fade.
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 64))
                     .foregroundStyle(.green)
                     .symbolEffect(.bounce, value: reduceMotion ? 0 : phaseKey)
-                    .transition(reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity).combined(with: .materializeBlur))
             case .failure(_, let isCaution, _):
+                // No `.symbolEffect(.bounce)` here — bounce is the payment-received
+                // celebration beat (DESIGN.md §6); a failure/caution glyph must not
+                // borrow it. It still scales + fades in, just without the delight.
                 Image(systemName: isCaution ? "exclamationmark.triangle.fill" : "xmark.circle.fill")
                     .font(.system(size: 64))
                     .foregroundStyle(isCaution ? .orange : .red)
-                    .symbolEffect(.bounce, value: reduceMotion ? 0 : phaseKey)
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity))
             }
         }
@@ -314,5 +319,29 @@ struct PayFlowScaffold<TopAccessory: View, Hero: View, Details: View, Footer: Vi
             // (confirm) or absence (status) never shifts the details-block Y.
             .overlay(alignment: .top) { topAccessory }
         }
+    }
+}
+
+// MARK: - Materialize transition (DESIGN.md §6 carve-out)
+
+fileprivate extension AnyTransition {
+    /// Blur-to-sharp "materialize" for confirmation glyphs: the glyph resolves from
+    /// blur radius 4 → 0 as it enters, riding whatever curve the caller animates with
+    /// (here the `.smooth(duration: 0.3)` on `phaseKey`). It makes a success check
+    /// come *into focus* rather than merely scaling in. DESIGN.md §6 carve-out —
+    /// confirmation glyphs only, never money values; callers gate it behind
+    /// `!reduceMotion` (this composes only onto the non-reduce-motion branch).
+    static var materializeBlur: AnyTransition {
+        .modifier(
+            active: BlurMaterializeModifier(radius: 4),
+            identity: BlurMaterializeModifier(radius: 0)
+        )
+    }
+}
+
+private struct BlurMaterializeModifier: ViewModifier {
+    let radius: CGFloat
+    func body(content: Content) -> some View {
+        content.blur(radius: radius)
     }
 }

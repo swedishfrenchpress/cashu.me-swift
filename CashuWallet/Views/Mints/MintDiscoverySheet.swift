@@ -86,7 +86,7 @@ struct MintDiscoverySheet: View {
                     .listRowBackground(Color.clear)
                 }
             }
-            .animation(.default, value: addedURLsThisSession)
+            .animation(.smooth(duration: 0.3), value: addedURLsThisSession)
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search mints")
             .refreshable { await discoveryManager.discoverMints() }
             .task {
@@ -158,7 +158,7 @@ struct MintDiscoverySheet: View {
             Spacer(minLength: 8)
 
             Button {
-                withAnimation {
+                withAnimation(.smooth(duration: 0.3)) {
                     addedURLsThisSession.insert(mint.url)
                 }
                 addMint(mint.url)

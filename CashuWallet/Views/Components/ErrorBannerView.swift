@@ -212,14 +212,20 @@ private struct ErrorBannerModifier: ViewModifier {
                         message: message,
                         severity: severity,
                         retry: retry,
-                        onDismiss: { withAnimation { self.message = nil } }
+                        onDismiss: { withAnimation(.snappy) { self.message = nil } }
                     )
                     .padding(.horizontal)
                     .padding(.bottom, 8)
+                    // Enter slides up from the bottom edge; exit is a quiet fade only
+                    // (Jakub: exits are subtler than entrances — the user's focus has
+                    // already moved on). See DESIGN.md §6 exit convention.
                     .transition(
                         reduceMotion
                             ? .opacity
-                            : .move(edge: .bottom).combined(with: .opacity)
+                            : .asymmetric(
+                                insertion: .move(edge: .bottom).combined(with: .opacity),
+                                removal: .opacity
+                            )
                     )
                 }
             }

@@ -475,19 +475,23 @@ struct RestoreWalletView: View {
 
     var body: some View {
         ZStack {
+            // Quiet cross-fade between restore steps — no lateral slide. This mirrors
+            // OnboardingView's restore twin (which documents the horizontal push as
+            // "jarring here"), and honors DESIGN.md rule #6: an in-place flow swap
+            // cross-fades; only cross-screen pushes slide.
             switch step {
             case .seed:
                 seedStep
-                    .transition(.opacity.combined(with: .move(edge: .leading)))
+                    .transition(.opacity)
             case .mints:
                 mintStep
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    .transition(.opacity)
             case .progress:
                 progressStep
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    .transition(.opacity)
             }
         }
-        .animation(.snappy(duration: 0.28), value: step)
+        .animation(.easeInOut(duration: 0.28), value: step)
         .navigationTitle("Restore")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -1315,6 +1319,8 @@ struct BackupView: View {
                                 Button(action: copyToClipboard) {
                                     Image(systemName: copiedToClipboard ? "checkmark" : "doc.on.doc")
                                         .foregroundStyle(copiedToClipboard ? .green : Color.accentColor)
+                                        .contentTransition(.symbolEffect(.replace))
+                                        .animation(.snappy(duration: 0.18), value: copiedToClipboard)
                                 }
                             }
                         }

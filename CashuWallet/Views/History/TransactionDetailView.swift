@@ -5,13 +5,9 @@ struct TransactionDetailView: View {
     @EnvironmentObject var walletManager: WalletManager
     let transaction: WalletTransaction
     @ObservedObject var settings = SettingsManager.shared
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var copyButtonText = "Copy"
     @State private var showShareSheet = false
-    /// Flips true on appear so the completed/failed hero glyph bounces in when the
-    /// sheet opens — the same entrance beat as the payment-success screen.
-    @State private var didAppear = false
 
     /// Returns the content to display as a QR code.
     private var qrContent: String? {
@@ -144,7 +140,6 @@ struct TransactionDetailView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
-            .onAppear { didAppear = true }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
@@ -202,17 +197,18 @@ struct TransactionDetailView: View {
                 }
             }
         } else if transaction.status == .completed {
+            // Static glyph — no `.symbolEffect(.bounce)`. This is historical review
+            // (a detail screen re-opened often), not the live payment-received moment
+            // that owns the bounce (DESIGN.md §6). The status already happened.
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 64))
                 .foregroundStyle(.green)
-                .symbolEffect(.bounce, value: reduceMotion ? false : didAppear)
                 .padding(.top, 24)
                 .accessibilityLabel("Completed")
         } else if transaction.status == .failed {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 64))
                 .foregroundStyle(.red)
-                .symbolEffect(.bounce, value: reduceMotion ? false : didAppear)
                 .padding(.top, 24)
                 .accessibilityLabel("Failed")
         }

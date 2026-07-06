@@ -46,14 +46,14 @@ struct SendView: View {
                             .transition(.opacity)
                     } else {
                         tokenDisplayView(token: token)
-                            .transition(.asymmetric(
+                            .transition(reduceMotion ? .opacity : .asymmetric(
                                 insertion: .move(edge: .trailing).combined(with: .opacity),
                                 removal: .move(edge: .leading).combined(with: .opacity)
                             ))
                     }
                 } else {
                     sendInputView
-                        .transition(.asymmetric(
+                        .transition(reduceMotion ? .opacity : .asymmetric(
                             insertion: .move(edge: .leading).combined(with: .opacity),
                             removal: .move(edge: .leading).combined(with: .opacity)
                         ))
@@ -344,7 +344,7 @@ struct SendView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
     }
 
     /// Label for the locked-to chip: "Your key" when locking to the recoverable
@@ -415,7 +415,7 @@ struct SendView: View {
                             // green ✓ badge). The settled state reads .primary.
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
-                            .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
+                            .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
                         } else if isCheckingClaim {
                             HStack(spacing: 6) {
                                 ProgressView().scaleEffect(0.8)
@@ -847,6 +847,7 @@ struct UnifiedSendView: View {
     let onContactless: () -> Void
 
     @EnvironmentObject var walletManager: WalletManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var settings = SettingsManager.shared
     @ObservedObject private var priceService = PriceService.shared
 
@@ -979,7 +980,7 @@ struct UnifiedSendView: View {
                     toPill(locked)
                         .padding(.horizontal)
                         .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                 }
 
                 Group {
@@ -1205,7 +1206,7 @@ struct UnifiedSendView: View {
         feeTask?.cancel()
         feeState = .idle
         errorMessage = nil
-        withAnimation { step = .input }
+        withAnimation(.smooth(duration: 0.3)) { step = .input }
     }
 
     // MARK: Auto-advance
@@ -1273,7 +1274,7 @@ struct UnifiedSendView: View {
                 errorMessage = nil
                 HapticFeedback.selection()
                 if summary.amount != nil {
-                    withAnimation { step = .confirm }
+                    withAnimation(.smooth(duration: 0.3)) { step = .confirm }
                     recomputeFee()
                 } else {
                     goToAmount()
@@ -1302,12 +1303,12 @@ struct UnifiedSendView: View {
     private func goToAmount() {
         amountString = ""
         HapticFeedback.selection()
-        withAnimation { step = .amount }
+        withAnimation(.smooth(duration: 0.3)) { step = .amount }
     }
 
     private func startMeltConfirm() {
         HapticFeedback.selection()
-        withAnimation { step = .confirm }
+        withAnimation(.smooth(duration: 0.3)) { step = .confirm }
         fetchMeltQuote()
     }
 
@@ -1373,10 +1374,10 @@ struct UnifiedSendView: View {
         HapticFeedback.selection()
         switch locked {
         case .melt:
-            withAnimation { step = .confirm }
+            withAnimation(.smooth(duration: 0.3)) { step = .confirm }
             fetchMeltQuote()
         case .cashuRequest:
-            withAnimation { step = .confirm }
+            withAnimation(.smooth(duration: 0.3)) { step = .confirm }
             recomputeFee()
         case nil:
             break
@@ -1631,7 +1632,7 @@ struct UnifiedSendView: View {
                 if step == .confirm {
                     fetchMeltQuote()
                 } else {
-                    withAnimation { step = .confirm }
+                    withAnimation(.smooth(duration: 0.3)) { step = .confirm }
                 }
             }
         )
@@ -1686,16 +1687,16 @@ struct UnifiedSendView: View {
         guard let quote = meltQuote else { return }
         HapticFeedback.impact(.medium)
         errorMessage = nil
-        withAnimation { step = .sending }
+        withAnimation(.smooth(duration: 0.3)) { step = .sending }
         Task { @MainActor in
             do {
                 _ = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
-                withAnimation { step = .sent }
+                withAnimation(.smooth(duration: 0.3)) { step = .sent }
             } catch {
                 // Keep errorMessage set so the confirm screen's notice + switch-mint
                 // CTA reappear when the user taps Try Again.
                 presentError(from: error)
-                withAnimation { step = .failed }
+                withAnimation(.smooth(duration: 0.3)) { step = .failed }
             }
         }
     }
@@ -1891,7 +1892,7 @@ struct UnifiedSendView: View {
         guard let creq = currentCreq, creqCanPay, let mint = selectedPaymentMint else { return }
         HapticFeedback.impact(.medium)
         errorMessage = nil
-        withAnimation { step = .sending }
+        withAnimation(.smooth(duration: 0.3)) { step = .sending }
         Task { @MainActor in
             do {
                 try await walletManager.payCashuPaymentRequest(
@@ -1899,10 +1900,10 @@ struct UnifiedSendView: View {
                     customAmountSats: creq.amount == nil ? paymentAmountForCreq : nil,
                     preferredMintURL: mint.url
                 )
-                withAnimation { step = .sent }
+                withAnimation(.smooth(duration: 0.3)) { step = .sent }
             } catch {
                 presentError(from: error)
-                withAnimation { step = .failed }
+                withAnimation(.smooth(duration: 0.3)) { step = .failed }
             }
         }
     }
@@ -1913,7 +1914,7 @@ struct UnifiedSendView: View {
         guard let creq = currentCreq else { return }
         HapticFeedback.impact(.medium)
         errorMessage = nil
-        withAnimation { step = .sending }
+        withAnimation(.smooth(duration: 0.3)) { step = .sending }
         Task { @MainActor in
             do {
                 try await walletManager.addMintAndPayCashuRequest(
@@ -1922,10 +1923,10 @@ struct UnifiedSendView: View {
                     targetMintURL: targetMintURL,
                     onStage: { _ in }
                 )
-                withAnimation { step = .sent }
+                withAnimation(.smooth(duration: 0.3)) { step = .sent }
             } catch let topUp as NeedsExternalTopUp {
                 // No held mint can fund it — return to confirm, then show the top-up QR.
-                withAnimation { step = .confirm }
+                withAnimation(.smooth(duration: 0.3)) { step = .confirm }
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 topUpContext = TopUpContext(
                     summary: creq,
@@ -1938,10 +1939,10 @@ struct UnifiedSendView: View {
                     "Still settling — your balance will update shortly. Try again in a moment.",
                     severity: .caution
                 )
-                withAnimation { step = .failed }
+                withAnimation(.smooth(duration: 0.3)) { step = .failed }
             } catch {
                 presentError(from: error)
-                withAnimation { step = .failed }
+                withAnimation(.smooth(duration: 0.3)) { step = .failed }
             }
         }
     }
@@ -2487,6 +2488,7 @@ struct MeltView: View {
     /// Drives the full-screen processing → success → failure status screen.
     /// nil while the user is still on input/confirm.
     @State private var paymentPhase: PaymentStatusView.Phase?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private func presentError(_ message: String, severity: ErrorSeverity = .error) {
         errorMessage = message
@@ -2571,13 +2573,13 @@ struct MeltView: View {
                     // One branch for both loading (quote == nil) and confirmed — the fee
                     // rows fill in place when the mint quote lands, no view swap.
                     quoteConfirmView(quote: meltQuote)
-                        .transition(.asymmetric(
+                        .transition(reduceMotion ? .opacity : .asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
                             removal: .move(edge: .leading).combined(with: .opacity)
                         ))
                 } else {
                     requestInputView
-                        .transition(.asymmetric(
+                        .transition(reduceMotion ? .opacity : .asymmetric(
                             insertion: .move(edge: .leading).combined(with: .opacity),
                             removal: .move(edge: .leading).combined(with: .opacity)
                         ))
@@ -3091,7 +3093,7 @@ struct MeltView: View {
             details: rows,
             phase: phase,
             onDone: close,
-            onRetry: { withAnimation { paymentPhase = nil } }
+            onRetry: { withAnimation(.smooth(duration: 0.3)) { paymentPhase = nil } }
         )
     }
 
@@ -3322,18 +3324,18 @@ struct MeltView: View {
         isPaying = true
         errorMessage = nil
         HapticFeedback.impact(.medium)
-        withAnimation { paymentPhase = .processing }
+        withAnimation(.smooth(duration: 0.3)) { paymentPhase = .processing }
 
         Task { @MainActor in
             do {
                 let _ = try await walletManager.meltTokens(quoteId: quote.id, mintUrl: quote.mintUrl)
-                withAnimation { paymentPhase = .success }
+                withAnimation(.smooth(duration: 0.3)) { paymentPhase = .success }
             } catch {
                 let walletMessage = error.walletMessage
                 // Keep errorMessage populated so the confirm screen's notice reappears
                 // if the user taps Try Again.
                 presentError(walletMessage.text, severity: walletMessage.severity)
-                withAnimation {
+                withAnimation(.smooth(duration: 0.3)) {
                     paymentPhase = .failure(
                         message: walletMessage.text,
                         isCaution: walletMessage.severity == .caution,

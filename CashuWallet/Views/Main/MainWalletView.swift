@@ -179,7 +179,7 @@ struct MainWalletView: View {
     private var balanceStatusLine: some View {
         if let delta = receivedDelta {
             receivedDeltaBeat(delta)
-                .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
         } else if settings.showFiatBalance && priceService.btcPriceUSD > 0 {
             Text(priceService.formatSatsAsFiat(walletManager.balance))
                 .font(.body)

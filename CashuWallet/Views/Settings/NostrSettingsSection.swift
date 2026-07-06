@@ -163,9 +163,9 @@ struct NostrKeysSettingsSection: View {
     private func copyNpub() {
         UIPasteboard.general.string = nostrService.npub
         HapticFeedback.selection()
-        withAnimation { copiedValue = "key" }
+        withAnimation(.snappy(duration: 0.18)) { copiedValue = "key" }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if copiedValue == "key" { withAnimation { copiedValue = nil } }
+            if copiedValue == "key" { withAnimation(.snappy(duration: 0.18)) { copiedValue = nil } }
         }
     }
 
@@ -347,10 +347,10 @@ struct NostrRelaysSettingsSection: View {
     private func copyRelay(_ relay: String) {
         UIPasteboard.general.string = relay
         HapticFeedback.selection()
-        withAnimation { copiedRelay = relay }
+        withAnimation(.snappy(duration: 0.18)) { copiedRelay = relay }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if copiedRelay == relay {
-                withAnimation { copiedRelay = nil }
+                withAnimation(.snappy(duration: 0.18)) { copiedRelay = nil }
             }
         }
     }

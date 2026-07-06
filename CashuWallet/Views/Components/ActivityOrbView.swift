@@ -21,7 +21,7 @@ struct ActivityOrbView: View {
                     .font(.title3)
                     .foregroundStyle(Color.accentColor)
                     .rotationEffect(.degrees(rotation))
-                    .transition(.opacity.combined(with: .scale))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale))
             }
         }
         .accessibilityHidden(true)

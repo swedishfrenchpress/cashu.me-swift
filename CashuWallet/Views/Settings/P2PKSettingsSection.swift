@@ -193,9 +193,9 @@ struct P2PKSettingsSection: View {
     private func copy(_ value: String, label: String) {
         UIPasteboard.general.string = value
         HapticFeedback.selection()
-        withAnimation { copiedValue = label }
+        withAnimation(.snappy(duration: 0.18)) { copiedValue = label }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if copiedValue == label { withAnimation { copiedValue = nil } }
+            if copiedValue == label { withAnimation(.snappy(duration: 0.18)) { copiedValue = nil } }
         }
     }
 }
@@ -557,9 +557,9 @@ private struct DeviceKeyDetailView: View {
     private func copy(_ value: String, label: String) {
         UIPasteboard.general.string = value
         HapticFeedback.selection()
-        withAnimation { copiedValue = label }
+        withAnimation(.snappy(duration: 0.18)) { copiedValue = label }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if copiedValue == label { withAnimation { copiedValue = nil } }
+            if copiedValue == label { withAnimation(.snappy(duration: 0.18)) { copiedValue = nil } }
         }
     }
 }
@@ -681,6 +681,8 @@ struct PrivateKeyRevealSheet: View {
                                 Button(action: copyKey) {
                                     Image(systemName: copied ? "checkmark" : "doc.on.doc")
                                         .foregroundStyle(copied ? .green : Color.accentColor)
+                                        .contentTransition(.symbolEffect(.replace))
+                                        .animation(.snappy(duration: 0.18), value: copied)
                                 }
                             }
                         }

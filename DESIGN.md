@@ -878,6 +878,26 @@ cross-fades and value-driven container animations.
 `.linear(duration: 2).repeatForever()` for the ActivityOrb rotation only.
 No bounce, no elastic, no custom cubic-bezier, no `.interactiveSpring`.
 
+**Carve-outs** *(added 2026-07-06 — motion audit, design-motion-principles /
+Jakub-Krehel production-polish lens; both refine the seven, neither adds a new
+curve or a delight beat):*
+
+- **Subtler exits.** Exits are quieter than entrances. An element that *enters*
+  with move/scale + opacity *leaves* with opacity alone (or a ≤50% move). This
+  applies to transient surfaces — the error banner
+  (`.asymmetric(insertion: .move(edge:.bottom)+opacity, removal: .opacity)`),
+  the celebration / received badges, and the home received-delta beat. The seven
+  named animations keep their **entrance** recipes verbatim; only the removal
+  edge changes. Honors `accessibilityReduceMotion` (reduce-motion is a plain
+  `.opacity` both ways).
+- **Blur-to-sharp materialize.** A blur radius `4 → 0` is an allowed *entrance*
+  modifier on **confirmation glyphs only** — the payment-received celebration and
+  `PaymentStatusView`'s success check — so the glyph comes *into focus* as it
+  scales in, riding the existing `.smooth(0.3)` / celebration curve (no new
+  timing). Never on a money value (Numbers Are Sacred), never ambient, always
+  dropped under `accessibilityReduceMotion`. Bounce stays reserved for the one
+  celebration beat: a failure or historical-review glyph never bounces.
+
 ## 7. Do's and Don'ts
 
 ### Do
