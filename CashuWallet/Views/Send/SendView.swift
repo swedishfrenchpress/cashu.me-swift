@@ -1400,60 +1400,54 @@ struct UnifiedSendView: View {
     /// Melt confirm: the amount is the only prominent element; the mint, fee, and
     /// (on-chain) destination sit beneath as equal-weight detail rows.
     private var meltConfirmBody: some View {
-        VStack(spacing: 0) {
-            Group {
-                if let quote = meltQuote {
-                    // Shared Pay-flow scaffold so the amount + fact rows sit at the
-                    // same Y as the processing / success screens. The Pay CTA stays in
-                    // the shared footer below (kept for the dead-end / retry states).
-                    PayFlowScaffold {
-                        CurrencyAmountDisplay(sats: quote.amount, primary: $settings.amountDisplayPrimary)
-                    } details: {
-                        meltConfirmRows(quote)
+        let displayAmount = meltQuote?.amount ?? knownMeltAmount ?? 0
+        let canPay = meltQuote.map { hasSufficientBalance(for: $0) } ?? false
+        // One scaffold for both the in-flight and resolved states so the amount hero shows
+        // the instant paste → confirm lands and the fee rows fill in place (see
+        // `meltConfirmRows`) — no bare-spinner screen, no view swap, matching the Cashu-
+        // request confirm. A quote-fetch *failure* still routes to the shared full-screen
+        // status (see `statusPhase`), so this loading state only shows while genuinely in
+        // flight. The Pay CTA stays in the footer below (kept for the dead-end / retry states).
+        return VStack(spacing: 0) {
+            PayFlowScaffold {
+                CurrencyAmountDisplay(sats: displayAmount, primary: $settings.amountDisplayPrimary)
+            } details: {
+                meltConfirmRows(meltQuote)
 
-                        if !hasSufficientBalance(for: quote),
-                           let balance = mintInfo(for: quote)?.balance {
-                            InlineNotice(
-                                message: "This mint holds \(AmountFormatter.sats(balance, useBitcoinSymbol: settings.useBitcoinSymbol)); the payment reserves up to \(AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol)).",
-                                severity: .caution
-                            )
-                            .padding(.top, 12)
-                            .padding(.horizontal)
-                        }
-
-                        if let errorMessage {
-                            errorNotice(errorMessage)
-                                .padding(.top, 12)
-                                .padding(.horizontal)
-                        }
-                    } footer: {
-                        EmptyView()
-                    } topAccessory: {
-                        confirmHeader(mint: mintInfo(for: quote) ?? activeMeltMint, locked: locked)
-                    }
-                } else {
-                    // Quote fetch in flight; a fetch failure routes to the shared
-                    // full-screen status (see `statusPhase`), not a bespoke dead-end.
-                    // Keep the header pinned so the mint + "To" pills don't blink out.
-                    VStack(spacing: 0) {
-                        confirmHeader(mint: activeMeltMint, locked: locked)
-                        Spacer(minLength: 0)
-                        ProgressView()
-                        Spacer(minLength: 0)
-                    }
+                if let quote = meltQuote,
+                   !hasSufficientBalance(for: quote),
+                   let balance = mintInfo(for: quote)?.balance {
+                    InlineNotice(
+                        message: "This mint holds \(AmountFormatter.sats(balance, useBitcoinSymbol: settings.useBitcoinSymbol)); the payment reserves up to \(AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol)).",
+                        severity: .caution
+                    )
+                    .padding(.top, 12)
+                    .padding(.horizontal)
                 }
+
+                if let errorMessage {
+                    errorNotice(errorMessage)
+                        .padding(.top, 12)
+                        .padding(.horizontal)
+                }
+            } footer: {
+                EmptyView()
+            } topAccessory: {
+                confirmHeader(mint: meltQuote.flatMap(mintInfo(for:)) ?? activeMeltMint, locked: locked)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if let quote = meltQuote {
-                Button(action: payMelt) {
-                    Text("Pay \(quote.amount) sat")
+            Button(action: payMelt) {
+                if meltQuote == nil {
+                    ProgressView()
+                } else {
+                    Text("Pay \(displayAmount) sat")
                 }
-                .glassButton()
-                .disabled(isWorking || !hasSufficientBalance(for: quote))
-                .padding(.horizontal)
-                .padding(.bottom, 16)
             }
+            .glassButton()
+            .disabled(meltQuote == nil || isWorking || !canPay)
+            .padding(.horizontal)
+            .padding(.bottom, 16)
         }
     }
 
@@ -1464,26 +1458,34 @@ struct UnifiedSendView: View {
     /// Read-only summary rows: the on-chain destination (where the pill truncates), the
     /// network fee, and the total that leaves the balance — all equal-weight details
     /// beneath the amount. The source mint now lives in the top header pill.
-    private func meltConfirmRows(_ quote: MeltQuoteInfo) -> some View {
-        VStack(spacing: 0) {
-            if quote.paymentMethod == .onchain, case let .melt(request, _, _) = locked {
+    private func meltConfirmRows(_ quote: MeltQuoteInfo?) -> some View {
+        // While the mint quote is in flight (`quote == nil`) the fee + total render as
+        // skeleton placeholders that fill in place when it lands. The on-chain "To" row is
+        // driven by the locked mode (not the quote) so it holds its slot across the fill-in.
+        let isLoading = quote == nil
+        let isOnchain: Bool = { if case .melt(_, .onchain, _) = locked { return true } else { return false } }()
+        return VStack(spacing: 0) {
+            if isOnchain, case let .melt(request, _, _) = locked {
                 creqDetailRow(icon: "arrow.up.right", label: "To", value: request)
                 creqDivider
             }
             creqDetailRow(
                 icon: "arrow.up.arrow.down",
                 label: "Network fee",
-                value: AmountFormatter.sats(quote.feeReserve, useBitcoinSymbol: settings.useBitcoinSymbol)
+                value: AmountFormatter.sats(quote?.feeReserve ?? 0, useBitcoinSymbol: settings.useBitcoinSymbol)
             )
+            .redacted(reason: isLoading ? .placeholder : [])
             creqDivider
             creqDetailRow(
                 icon: "creditcard",
                 label: "Total",
-                value: AmountFormatter.sats(quote.totalAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
+                value: AmountFormatter.sats(quote?.totalAmount ?? 0, useBitcoinSymbol: settings.useBitcoinSymbol)
             )
+            .redacted(reason: isLoading ? .placeholder : [])
         }
         .padding(.top, 16)
         .padding(.horizontal)
+        .animation(.smooth(duration: 0.3), value: isLoading)
     }
 
     /// Shared mint detail row (used by both the melt and Cashu-request confirms):
@@ -1714,6 +1716,19 @@ struct UnifiedSendView: View {
     }
 
     private var meltMinAmount: UInt64? { amountSats > 0 ? amountSats : nil }
+
+    /// Amount known before the mint quote returns — from the invoice (bolt11/bolt12) or,
+    /// for a Lightning address / on-chain send, the amount entered on the amount step. Lets
+    /// the confirm show its amount hero while the quote is still in flight.
+    private var knownMeltAmount: UInt64? {
+        guard case let .melt(_, _, decoded) = locked else { return nil }
+        switch decoded {
+        case .bolt11(let amount, _), .bolt12(let amount, _):
+            return amount ?? (amountSats > 0 ? amountSats : nil)
+        default:
+            return amountSats > 0 ? amountSats : nil
+        }
+    }
 
     private var activeMeltMint: MintInfo? {
         let compatible = availableMeltMints.filter { $0.supportedMeltMethods.contains(meltPaymentMethod) }
@@ -2456,10 +2471,12 @@ struct MeltView: View {
     @State private var amountString: String
     @State private var meltMode: MeltMode
     @State private var meltQuote: MeltQuoteInfo?
-    /// True from mount until the initial auto-quote resolves (success, failure, or a guard
-    /// that prevents fetching). Keeps the sheet on the confirm layout (in a loading state)
-    /// instead of flashing the input screen during the present animation. Seeded in `init`
-    /// only for amount-carrying BOLT11/BOLT12 auto-quotes; see `meltViewStateKey`.
+    /// True while an auto-quote for an amount-carrying invoice is in flight (from mount, or
+    /// from a paste/scan into this field) until it resolves (success, failure, or a guard
+    /// that prevents fetching). Keeps the screen on the confirm layout (in a loading state)
+    /// instead of flashing / lingering on the input screen. Seeded in `init` for the
+    /// scanned/deep-link mount case and set in `applyDecodedSuggestion` for paste/scan; see
+    /// `meltViewStateKey`.
     @State private var isPreparingInitialQuote: Bool
     @State private var isGettingQuote = false
     @State private var isPaying = false
@@ -3195,8 +3212,13 @@ struct MeltView: View {
         dismissedClipboardSuggestion = true
         errorMessage = nil
 
-        // Auto-quote when amount is locked.
+        // Auto-quote when amount is locked. Flip to the loading-confirm layout first so the
+        // paste/scan slides into the confirm (amount hero + skeleton fees) instead of
+        // lingering on the input screen with a spinner in the Get Quote button — matches the
+        // scanned-invoice mount path. `requestInput` is already set above, so the confirm's
+        // amount hero reads the invoice amount immediately.
         if PaymentRequestDecoder.amountLocked(result) {
+            isPreparingInitialQuote = true
             getQuote()
         }
     }
