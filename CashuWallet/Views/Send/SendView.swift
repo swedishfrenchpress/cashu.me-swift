@@ -2456,6 +2456,11 @@ struct MeltView: View {
     @State private var amountString: String
     @State private var meltMode: MeltMode
     @State private var meltQuote: MeltQuoteInfo?
+    /// True from mount until the initial auto-quote resolves (success, failure, or a guard
+    /// that prevents fetching). Keeps the sheet on the confirm layout (in a loading state)
+    /// instead of flashing the input screen during the present animation. Seeded in `init`
+    /// only for amount-carrying BOLT11/BOLT12 auto-quotes; see `meltViewStateKey`.
+    @State private var isPreparingInitialQuote: Bool
     @State private var isGettingQuote = false
     @State private var isPaying = false
     @State private var errorMessage: String?
@@ -2506,7 +2511,9 @@ struct MeltView: View {
         // All three payment phases share one key so switching between them doesn't
         // re-insert the status screen — the icon morph is owned by PaymentStatusView.
         if paymentPhase != nil { return "status" }
-        if meltQuote != nil { return "quote" }
+        // Loading and confirmed share one key so they render as the SAME view identity —
+        // the quote fills in place, no screen swap. (See `quoteConfirmView`.)
+        if meltQuote != nil || isPreparingInitialQuote { return "quote" }
         return "input"
     }
 
@@ -2522,6 +2529,19 @@ struct MeltView: View {
         _requestInput = State(initialValue: initialRequest)
         _amountString = State(initialValue: initialAmount)
         _meltMode = State(initialValue: initialMode)
+
+        // Seed the loading-confirm state for the very first frame so a scanned / auto-quoted
+        // invoice slides up into the confirm layout, never the input screen. Only qualifies
+        // amount-carrying BOLT11/BOLT12 — the cases where the `.onAppear` auto-quote is
+        // guaranteed to fire and land on the confirm screen. Decode is synchronous.
+        let hasKnownAmount: Bool
+        switch PaymentRequestDecoder.decode(initialRequest) {
+        case .bolt11(let amount, _), .bolt12(let amount, _):
+            hasKnownAmount = amount != nil
+        default:
+            hasKnownAmount = false
+        }
+        _isPreparingInitialQuote = State(initialValue: autoQuoteOnAppear && hasKnownAmount)
     }
 
     var body: some View {
@@ -2530,8 +2550,10 @@ struct MeltView: View {
                 if let paymentPhase {
                     statusView(paymentPhase)
                         .transition(.opacity)
-                } else if let quote = meltQuote {
-                    quoteConfirmView(quote: quote)
+                } else if meltQuote != nil || isPreparingInitialQuote {
+                    // One branch for both loading (quote == nil) and confirmed — the fee
+                    // rows fill in place when the mint quote lands, no view swap.
+                    quoteConfirmView(quote: meltQuote)
                         .transition(.asymmetric(
                             insertion: .move(edge: .trailing).combined(with: .opacity),
                             removal: .move(edge: .leading).combined(with: .opacity)
@@ -2585,6 +2607,10 @@ struct MeltView: View {
                    !requestInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                    !amountRequired {
                     getQuote()
+                } else {
+                    // Auto-quote won't fire (amountless / on-chain / manual) — drop the
+                    // loading seed so the input screen shows instead of a stuck spinner.
+                    isPreparingInitialQuote = false
                 }
             }
             .onChange(of: walletManager.activeMint?.id) {
@@ -2908,19 +2934,30 @@ struct MeltView: View {
     }
 
 
-    private func quoteConfirmView(quote: MeltQuoteInfo) -> some View {
+    /// Renders the confirm layout for both the loading state (`quote == nil`, before the mint
+    /// melt-quote lands) and the resolved state. The `quote != nil` render path is unchanged;
+    /// while loading the amount hero shows the synchronously-decoded invoice amount and the
+    /// fee / required-balance rows are skeleton placeholders that fill in place when the quote
+    /// arrives — no view swap, so the sheet never flashes the input screen on present.
+    private func quoteConfirmView(quote: MeltQuoteInfo?) -> some View {
+        let isLoading = quote == nil
+        let displayAmount = quote?.amount ?? knownPaymentAmount ?? 0
+        let methodName = quote?.paymentMethod.displayName ?? meltMode.displayName
+        let selectorMint = quote.flatMap(mintInfo(for:)) ?? displayMeltMint
+        let canPay = quote.map { hasSufficientBalance(for: $0) } ?? false
+
         // Shared Pay-flow scaffold (see `PayFlowScaffold`) so the details block sits
         // at the same Y here as on the processing / success screens.
-        PayFlowScaffold {
+        return PayFlowScaffold {
             CurrencyAmountDisplay(
-                sats: quote.amount,
+                sats: displayAmount,
                 primary: $settings.amountDisplayPrimary
             )
         } details: {
             VStack(spacing: 0) {
-                meltDetailRow(icon: "bolt", label: "Method", value: quote.paymentMethod.displayName)
+                meltDetailRow(icon: "bolt", label: "Method", value: methodName)
                 meltDivider
-                if quote.paymentMethod == .onchain {
+                if quote?.paymentMethod == .onchain {
                     meltDetailRow(
                         icon: "arrow.up.right",
                         label: "To",
@@ -2928,21 +2965,27 @@ struct MeltView: View {
                     )
                     meltDivider
                 }
-                meltDetailRow(icon: "bitcoinsign", label: "Amount", value: "\(quote.amount) sat")
+                meltDetailRow(icon: "bitcoinsign", label: "Amount", value: "\(displayAmount) sat")
                 meltDivider
-                meltDetailRow(icon: "arrow.up.arrow.down", label: "Max fee", value: "\(quote.feeReserve) sat")
-                if quote.feeReserve > 0 {
+                meltDetailRow(icon: "arrow.up.arrow.down", label: "Max fee", value: "\(quote?.feeReserve ?? 0) sat")
+                    .redacted(reason: isLoading ? .placeholder : [])
+                // Reserve the Required-balance row while loading (we don't yet know the fee)
+                // so the common fee-bearing case doesn't shift when the quote lands.
+                if isLoading || (quote?.feeReserve ?? 0) > 0 {
                     meltDivider
-                    meltDetailRow(icon: "creditcard", label: "Required balance", value: "\(quote.totalAmount) sat")
+                    meltDetailRow(icon: "creditcard", label: "Required balance", value: "\(quote?.totalAmount ?? 0) sat")
+                        .redacted(reason: isLoading ? .placeholder : [])
                 }
                 // The paying mint is already shown in the selector chip above (with
                 // balance + switch), so no redundant "Mint" row.
             }
             .padding(.horizontal)
+            .animation(.smooth(duration: 0.3), value: isLoading)
 
             // Transient notices sit below the details block (the flexible zone) so
             // they never push the details anchor.
-            if !hasSufficientBalance(for: quote),
+            if let quote,
+               !hasSufficientBalance(for: quote),
                let balance = mintInfo(for: quote)?.balance {
                 InlineNotice(
                     message: "Selected mint has \(balance) sat; this quote can reserve up to \(quote.totalAmount) sat.",
@@ -2959,18 +3002,18 @@ struct MeltView: View {
             }
         } footer: {
             Button(action: payRequest) {
-                if isPaying {
+                if isPaying || isLoading {
                     ProgressView()
                 } else {
-                    Text("Pay \(quote.amount) sat")
+                    Text("Pay \(displayAmount) sat")
                 }
             }
             .glassButton()
-            .disabled(isPaying || !hasSufficientBalance(for: quote))
+            .disabled(isLoading || isPaying || !canPay)
             .padding(.horizontal)
             .padding(.bottom, 16)
         } topAccessory: {
-            if let mint = mintInfo(for: quote) {
+            if let mint = selectorMint {
                 MintConfirmSelectorRow(mint: mint, onTap: { showingMintPicker = true })
                     .padding(.horizontal)
                     .padding(.top, 12)
@@ -3164,6 +3207,9 @@ struct MeltView: View {
 
         if meltMode == .lightning,
            PaymentRequestParser.paymentMethod(for: trimmedInput) == .onchain {
+            // Switching to on-chain (or bailing) needs an amount the user must enter — fall
+            // back to the input screen rather than staying on the loading-confirm state.
+            isPreparingInitialQuote = false
             guard supportsOnchainMelt else {
                 presentError("No mint supports On-chain payments.")
                 return
@@ -3179,6 +3225,7 @@ struct MeltView: View {
         if let notice = PaymentRequestDecoder.decode(trimmedInput).amountlessMeltCaution {
             // Amountless invoice/offer can't be quoted without an amount we don't collect
             // here — surface the clean caution up-front instead of a raw mint error.
+            isPreparingInitialQuote = false
             presentError(notice, severity: .caution)
             return
         }
@@ -3187,6 +3234,7 @@ struct MeltView: View {
             // The inline notice under the field already explains this whenever the user
             // has mints; only fall back to the error surface when they have none, so the
             // two notices never stack the same message.
+            isPreparingInitialQuote = false
             if availableMeltMints.isEmpty {
                 presentError("No mint supports \(selectedMeltPaymentMethod.displayName) payments.")
             }
@@ -3230,6 +3278,9 @@ struct MeltView: View {
                     setMeltQuote(quote)
                 }
             } catch {
+                // Fetch failed — leave the loading-confirm state so the input screen
+                // reappears with the error notice.
+                isPreparingInitialQuote = false
                 presentError(from: error)
             }
         }
@@ -3237,6 +3288,7 @@ struct MeltView: View {
 
     private func setMeltQuote(_ quote: MeltQuoteInfo) {
         meltQuote = quote
+        isPreparingInitialQuote = false
         if let mint = mintInfo(for: quote) {
             selectedMeltMint = mint
         }
