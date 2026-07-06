@@ -29,7 +29,7 @@ enum TokenParser {
         return TokenInfo(
             amount: amount,
             mint: mint,
-            unit: "sat",
+            unit: PaymentRequestDecoder.unitDescription(token.unit() ?? .sat),
             memo: token.memo(),
             proofCount: proofs.count
         )

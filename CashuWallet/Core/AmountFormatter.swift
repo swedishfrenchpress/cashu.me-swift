@@ -85,6 +85,70 @@ enum AmountFormatter {
         }
     }
 
+    // MARK: - Live amount entry in an explicit mint unit
+    //
+    // A mint *account* unit (sat, eur, usd, or a custom string) is entered
+    // directly in that unit — no BTC-price conversion. `decimals` comes from the
+    // unit's `Currency` (0 for sat/custom, 2 for usd/eur). `decimals == 0` is an
+    // integer append; `decimals > 0` is a minor-unit accumulator (digits shift
+    // in from the right), mirroring the fiat cents keypad but yielding the
+    // unit's own base amount instead of converting to sats.
+
+    /// The integer base-unit value of a typed string for a unit with `decimals`
+    /// fraction digits ("5.00", 2 → 500; "500", 0 → 500).
+    static func entryBaseUnits(raw: String, decimals: Int) -> UInt64 {
+        guard decimals > 0 else { return UInt64(raw) ?? 0 }
+        return UInt64(raw.filter { $0.isNumber }) ?? 0
+    }
+
+    /// Append a keypad digit for direct unit entry. Integer units collapse a
+    /// lone leading zero; fractional units accumulate minor units from the right.
+    /// Returns the unchanged string when the key is rejected (so the caller can
+    /// skip the haptic).
+    static func entryAppendUnit(_ key: String, to raw: String, decimals: Int) -> String {
+        guard key.count == 1, let ch = key.first, ch.isNumber else { return raw }
+        guard decimals > 0 else {
+            return raw == "0" ? key : raw + key
+        }
+        let minor = entryBaseUnits(raw: raw, decimals: decimals)
+        guard minor < maxMinorUnits else { return raw }
+        let updated = minor * 10 + UInt64(ch.wholeNumberValue ?? 0)
+        return updated == 0 ? "" : minorUnitString(updated, decimals: decimals)
+    }
+
+    /// Remove the last keypad input for direct unit entry (mirrors `entryBackspace`).
+    static func entryBackspaceUnit(_ raw: String, decimals: Int) -> String {
+        guard !raw.isEmpty else { return raw }
+        guard decimals > 0 else { return String(raw.dropLast()) }
+        let minor = entryBaseUnits(raw: raw, decimals: decimals) / 10
+        return minor == 0 ? "" : minorUnitString(minor, decimals: decimals)
+    }
+
+    /// The typed-entry string for a base-unit amount in a unit with `decimals`
+    /// fraction digits — the inverse of `entryBaseUnits` (500, 2 → "5.00").
+    /// Empty for a zero amount so the keypad shows its placeholder.
+    static func entryString(baseUnits: UInt64, decimals: Int) -> String {
+        guard baseUnits > 0 else { return "" }
+        return minorUnitString(baseUnits, decimals: decimals)
+    }
+
+    /// Ceiling on the minor-unit accumulator, matching the fiat entry cap so a
+    /// held key can't run past sane bounds.
+    private static let maxMinorUnits: UInt64 = 99_999_999_999
+
+    /// A locale-separated string with `decimals` fraction digits for a minor-unit
+    /// integer (1454, 2 → "14.54"); no grouping/symbol — those are added at
+    /// display time via the unit's `Currency`.
+    private static func minorUnitString(_ minor: UInt64, decimals: Int) -> String {
+        guard decimals > 0 else { return String(minor) }
+        var divisor: UInt64 = 1
+        for _ in 0..<decimals { divisor *= 10 }
+        let intPart = minor / divisor
+        let fracPart = Int(minor % divisor)
+        let frac = String(format: "%0\(decimals)d", fracPart)
+        return "\(intPart)\(decimalSeparator)\(frac)"
+    }
+
     /// Re-express a typed string when the entry unit flips, preserving the
     /// amount through sats so the displayed value stays economically equal.
     @MainActor

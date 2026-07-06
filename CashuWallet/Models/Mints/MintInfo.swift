@@ -11,8 +11,12 @@ struct MintInfo: Identifiable, Equatable, Codable {
     /// Icon URL (if available from mint info)
     var iconUrl: String?
     
-    /// Supported units
+    /// Supported units — the union of the mint's mintable and meltable units.
     var units: [String] = ["sat"]
+
+    /// Units the mint can MINT (NUT-04), a subset of `units`. Drives the Receive
+    /// unit selector so we never offer a melt-only unit for minting.
+    var mintUnits: [String] = ["sat"]
 
     /// Supported NUT-04 payment methods for receiving
     var supportedMintMethods: [PaymentMethodKind] = [.bolt11]
@@ -28,6 +32,41 @@ struct MintInfo: Identifiable, Equatable, Codable {
 }
 
 extension MintInfo {
+    /// True when the mint advertises more than one unit, so a unit chooser is
+    /// worth surfacing. Single-unit mints hide the selector entirely.
+    var supportsMultipleUnits: Bool { units.count > 1 }
+
+    /// Preferred unit for this mint: "sat" when supported, otherwise the first
+    /// unit alphabetically, falling back to "sat" for a malformed empty list.
+    var defaultUnit: String {
+        units.contains("sat") ? "sat" : (units.sorted().first ?? "sat")
+    }
+
+    /// Returns `unit` when this mint supports it, otherwise `defaultUnit`. Used
+    /// to reset a stale selection when the active mint changes.
+    func resolvedUnit(_ unit: String?) -> String {
+        guard let unit, units.contains(unit) else { return defaultUnit }
+        return unit
+    }
+
+    // MARK: - Mintable units (NUT-04)
+
+    /// True when the mint can mint more than one unit — gates the Receive selector.
+    var supportsMultipleMintUnits: Bool { mintUnits.count > 1 }
+
+    /// Preferred mintable unit: "sat" when mintable, else the first sorted unit.
+    var defaultMintUnit: String {
+        mintUnits.contains("sat") ? "sat" : (mintUnits.sorted().first ?? "sat")
+    }
+
+    /// Returns `unit` when the mint can mint it, otherwise `defaultMintUnit`.
+    func resolvedMintUnit(_ unit: String?) -> String {
+        guard let unit, mintUnits.contains(unit) else { return defaultMintUnit }
+        return unit
+    }
+}
+
+extension MintInfo {
     private enum CodingKeys: String, CodingKey {
         case url
         case name
@@ -36,6 +75,7 @@ extension MintInfo {
         case balance
         case iconUrl
         case units
+        case mintUnits
         case supportedMintMethods
         case supportedMeltMethods
         case onchainMintConfirmations
@@ -51,6 +91,9 @@ extension MintInfo {
         balance = try container.decodeIfPresent(UInt64.self, forKey: .balance) ?? 0
         iconUrl = try container.decodeIfPresent(String.self, forKey: .iconUrl)
         units = try container.decodeIfPresent([String].self, forKey: .units) ?? ["sat"]
+        // Older records predate mintUnits — fall back to the full unit set so a
+        // multi-unit mint keeps offering units until its next refresh repopulates.
+        mintUnits = try container.decodeIfPresent([String].self, forKey: .mintUnits) ?? units
         supportedMintMethods = try container.decodeIfPresent([PaymentMethodKind].self, forKey: .supportedMintMethods) ?? [.bolt11]
         supportedMeltMethods = try container.decodeIfPresent([PaymentMethodKind].self, forKey: .supportedMeltMethods) ?? [.bolt11]
         onchainMintConfirmations = try container.decodeIfPresent(Int.self, forKey: .onchainMintConfirmations)
@@ -66,6 +109,7 @@ extension MintInfo {
         try container.encode(balance, forKey: .balance)
         try container.encodeIfPresent(iconUrl, forKey: .iconUrl)
         try container.encode(units, forKey: .units)
+        try container.encode(mintUnits, forKey: .mintUnits)
         try container.encode(supportedMintMethods, forKey: .supportedMintMethods)
         try container.encode(supportedMeltMethods, forKey: .supportedMeltMethods)
         try container.encodeIfPresent(onchainMintConfirmations, forKey: .onchainMintConfirmations)

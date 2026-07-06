@@ -8,13 +8,15 @@ extension WalletManager {
         amount: UInt64,
         memo: String? = nil,
         p2pkPubkey: String? = nil,
-        mintUrl preferredMintURL: String? = nil
+        mintUrl preferredMintURL: String? = nil,
+        unit: String = "sat"
     ) async throws -> SendTokenResult {
         let result = try await tokenService.sendTokens(
             amount: amount,
             memo: memo,
             p2pkPubkey: p2pkPubkey,
-            mintUrl: preferredMintURL
+            mintUrl: preferredMintURL,
+            unit: PaymentRequestDecoder.currencyUnit(from: unit)
         )
         let tokenMintURL = preferredMintURL ?? activeMint?.url ?? ""
         
@@ -35,6 +37,27 @@ extension WalletManager {
         await loadTransactions()
         SentryService.breadcrumb("Token sent", category: "wallet.token")
         return result
+    }
+
+    /// Balance of a specific (mint, unit) wallet, in that unit's base units.
+    /// "sat" resolves from the cached per-mint balance; other units query CDK
+    /// directly since the app doesn't cache non-sat balances. Returns nil on any
+    /// failure (e.g. a mint that doesn't actually support the unit).
+    func unitBalance(mintURL: String, unit: String) async -> UInt64? {
+        if unit.lowercased() == "sat" {
+            return mints.first(where: { $0.url == mintURL })?.balance
+        }
+        guard let repo = walletRepository else { return nil }
+        do {
+            let mintUrl = MintUrl(url: mintURL)
+            let currencyUnit = PaymentRequestDecoder.currencyUnit(from: unit)
+            try await repo.createWallet(mintUrl: mintUrl, unit: currencyUnit, targetProofCount: nil)
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: currencyUnit)
+            return try await wallet.totalBalance().value
+        } catch {
+            AppLogger.wallet.debug("unitBalance(\(unit)) failed: \(String(describing: error))")
+            return nil
+        }
     }
 
     func receiveTokens(tokenString: String) async throws -> UInt64 {
@@ -102,7 +125,9 @@ extension WalletManager {
         do {
             let token = try Token.decode(encodedToken: tokenString)
             let mintUrl = try token.mintUrl()
-            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+            // Match the wallet the receive actually swapped into (the token's own
+            // unit), so tx attribution works for non-sat receives too.
+            let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: token.unit() ?? .sat)
             let txs = try await wallet.listTransactions(direction: .incoming)
             return Set(txs.map { $0.id.hex })
         } catch {

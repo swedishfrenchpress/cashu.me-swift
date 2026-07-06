@@ -6,10 +6,30 @@ import SwiftUI
 /// Per-keypress selection haptics, long-press on delete clears the whole value.
 struct NumberPadAmountInput: View {
     @Binding var amountString: String
-    /// The active entry unit. Sats is an integer; fiat is a cents accumulator
-    /// (digits shift in from the right). Either way the bottom-left slot stays
-    /// blank — there is no decimal key, the fiat decimal is implied.
-    var unit: AmountDisplayPrimary = .sats
+
+    /// How keystrokes are interpreted:
+    /// - `.display`: sats (integer) or fiat (a cents accumulator, digits shift in
+    ///   from the right) — the sats↔fiat display flip.
+    /// - `.mintUnit`: a mint account unit entered directly, with `decimals`
+    ///   fraction digits (0 → integer like sats, 2 → cents like fiat).
+    /// Either way the bottom-left slot stays blank — there is no decimal key.
+    private enum Mode {
+        case display(AmountDisplayPrimary)
+        case mintUnit(decimals: Int)
+    }
+    private let mode: Mode
+
+    /// Sats/fiat display-flip entry (existing call sites).
+    init(amountString: Binding<String>, unit: AmountDisplayPrimary = .sats) {
+        self._amountString = amountString
+        self.mode = .display(unit)
+    }
+
+    /// Direct entry in a mint account unit with the given fraction-digit count.
+    init(amountString: Binding<String>, decimals: Int) {
+        self._amountString = amountString
+        self.mode = .mintUnit(decimals: decimals)
+    }
 
     @ScaledMetric(relativeTo: .title) private var keyHeight: CGFloat = 64
 
@@ -68,14 +88,26 @@ struct NumberPadAmountInput: View {
     }
 
     private func append(_ key: String) {
-        let updated = AmountFormatter.entryAppend(key, to: amountString, unit: unit)
+        let updated: String
+        switch mode {
+        case .display(let unit):
+            updated = AmountFormatter.entryAppend(key, to: amountString, unit: unit)
+        case .mintUnit(let decimals):
+            updated = AmountFormatter.entryAppendUnit(key, to: amountString, decimals: decimals)
+        }
         guard updated != amountString else { return }
         HapticFeedback.selection()
         amountString = updated
     }
 
     private func backspace() {
-        let updated = AmountFormatter.entryBackspace(amountString, unit: unit)
+        let updated: String
+        switch mode {
+        case .display(let unit):
+            updated = AmountFormatter.entryBackspace(amountString, unit: unit)
+        case .mintUnit(let decimals):
+            updated = AmountFormatter.entryBackspaceUnit(amountString, decimals: decimals)
+        }
         guard updated != amountString else { return }
         HapticFeedback.selection()
         amountString = updated

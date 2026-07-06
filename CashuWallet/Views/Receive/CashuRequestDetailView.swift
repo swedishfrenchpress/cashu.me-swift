@@ -15,6 +15,7 @@ struct CashuRequestDetailView: View {
     @State private var paymentJustReceived = false
     @State private var showMintPicker = false
     @State private var showAmountPicker = false
+    @State private var showUnitPicker = false
     @State private var receiveBaselineBalance: UInt64?
     @State private var didAutoComplete = false
 
@@ -83,6 +84,16 @@ struct CashuRequestDetailView: View {
                     regenerate(amount: amount)
                 }
             )
+        }
+        .sheet(isPresented: $showUnitPicker) {
+            if let request, let mint = requestMint(for: request) {
+                CashuRequestUnitPickerSheet(
+                    units: mint.units,
+                    currentUnit: request.unit,
+                    onSelect: { unit in regenerate(unit: unit) }
+                )
+                .presentationDetents([.medium])
+            }
         }
         .onAppear {
             // Baseline for the receive-flow balance watcher below.
@@ -192,7 +203,16 @@ struct CashuRequestDetailView: View {
                             )
                         }
                         canvasDivider
-                        detailRow(icon: "creditcard", label: "Unit", value: request.unit.uppercased())
+                        if unitEditable(for: request) {
+                            editableRow(
+                                icon: "creditcard",
+                                label: "Unit",
+                                value: request.unit.uppercased(),
+                                action: { showUnitPicker = true }
+                            )
+                        } else {
+                            detailRow(icon: "creditcard", label: "Unit", value: request.unit.uppercased())
+                        }
                         canvasDivider
                         detailRow(
                             icon: "calendar",
@@ -321,7 +341,10 @@ struct CashuRequestDetailView: View {
 
     private func amountDisplayValue(for request: CashuRequest) -> String {
         guard let amount = request.amount, amount > 0 else { return "Any" }
-        return "\(amount) \(request.unit)"
+        return CurrencyAmount(
+            value: amount,
+            currency: CurrencyRegistry.currency(forMintUnit: request.unit)
+        ).formatted()
     }
 
     // MARK: - Actions
@@ -340,7 +363,7 @@ struct CashuRequestDetailView: View {
     /// edits re-parameterize the one live request in place — payments to any
     /// previously shared copy still land on this row, and history never grows a
     /// second entry for the same receive intent.
-    private func regenerate(amount: UInt64?? = nil, mints: [String]? = nil) {
+    private func regenerate(amount: UInt64?? = nil, unit: String? = nil, mints: [String]? = nil) {
         HapticFeedback.selection()
         let nostr = NostrService.shared
         guard nostr.isInitialized, !nostr.publicKeyHex.isEmpty,
@@ -351,19 +374,37 @@ struct CashuRequestDetailView: View {
         case .some(let inner): nextAmount = inner
         }
         let nextMints = mints ?? existing.mints
+        // Validate the unit against the (possibly newly chosen) mint: keep the
+        // requested/existing unit when that mint supports it, else fall back to
+        // the mint's default. Covers both explicit unit edits and mint changes.
+        let requestedUnit = unit ?? existing.unit
+        let nextUnit = walletManager.mints.first { $0.url == nextMints.first }?
+            .resolvedUnit(requestedUnit) ?? requestedUnit
         do {
             let encoded = try PaymentRequestBuilder.build(
                 id: existing.id,
                 amount: nextAmount,
-                unit: existing.unit,
+                unit: nextUnit,
                 mints: nextMints,
                 description: existing.memo,
                 nostrPubkeyHex: nostr.publicKeyHex,
                 relays: SettingsManager.shared.nostrRelays
             )
-            store.update(id: existing.id, amount: nextAmount, mints: nextMints, encoded: encoded)
+            store.update(id: existing.id, amount: nextAmount, unit: nextUnit, mints: nextMints, encoded: encoded)
         } catch {
             AppLogger.wallet.error("Could not regenerate request: \(String(describing: error))")
         }
+    }
+
+    /// The tracked mint backing a request (nil for "any mint" / untracked).
+    private func requestMint(for request: CashuRequest) -> MintInfo? {
+        guard let mintUrl = request.mints.first else { return nil }
+        return walletManager.mints.first { $0.url == mintUrl }
+    }
+
+    /// The Unit row is editable only for an ecash request whose mint advertises
+    /// more than one unit.
+    private func unitEditable(for request: CashuRequest) -> Bool {
+        request.rail == .ecash && (requestMint(for: request)?.supportsMultipleUnits ?? false)
     }
 }

@@ -19,6 +19,14 @@ struct MintDetailView: View {
     @State private var showNavTitle = false
     @State private var isSettingDefault = false
     @State private var actionError: String?
+    /// Balances for the mint's non-sat units, loaded on demand (the sat balance
+    /// is the cached `mint.balance`). Where a freshly-minted eur/usd shows up.
+    @State private var unitBalances: [String: UInt64] = [:]
+
+    /// The mint's non-sat units (sat is shown by `balanceRow`).
+    private var nonSatUnits: [String] {
+        mint.units.filter { $0.lowercased() != "sat" }.sorted()
+    }
 
     private var isDefaultMint: Bool {
         walletManager.activeMint?.url == mint.url
@@ -51,6 +59,11 @@ struct MintDetailView: View {
                 // Identity stats — available immediately from local mint data.
                 VStack(spacing: 0) {
                     balanceRow
+                    // Per-unit balances for a multi-unit mint (e.g. a minted €5).
+                    ForEach(nonSatUnits, id: \.self) { unit in
+                        CanvasDivider()
+                        unitBalanceRow(unit)
+                    }
                     CanvasDivider()
                     connectionRow
                 }
@@ -96,6 +109,7 @@ struct MintDetailView: View {
             }
         }
         .task { await loadMintInfo() }
+        .task { await loadUnitBalances() }
         .alert("Remove Mint", isPresented: $showRemoveConfirmation) {
             Button("Remove", role: .destructive) { removeMint() }
             Button("Cancel", role: .cancel) {}
@@ -194,6 +208,21 @@ struct MintDetailView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+        .font(.body)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 14)
+    }
+
+    private func unitBalanceRow(_ unit: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Label("Balance (\(unit.uppercased()))", systemImage: "banknote")
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(unitBalances[unit].map {
+                CurrencyAmount(value: $0, currency: CurrencyRegistry.currency(forMintUnit: unit)).formatted()
+            } ?? "…")
+                .monospacedDigit()
         }
         .font(.body)
         .padding(.horizontal, 4)
@@ -761,6 +790,16 @@ struct MintDetailView: View {
             errorMessage = error.userFacingWalletMessage
         }
         isLoading = false
+    }
+
+    /// Fetch each non-sat unit's balance so a minted eur/usd is visible here
+    /// (the app's aggregate balance is sat-only).
+    private func loadUnitBalances() async {
+        for unit in nonSatUnits {
+            if let balance = await walletManager.unitBalance(mintURL: mint.url, unit: unit) {
+                unitBalances[unit] = balance
+            }
+        }
     }
 
     private func removeMint() {

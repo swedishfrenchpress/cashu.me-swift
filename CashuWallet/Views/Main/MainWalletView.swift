@@ -80,6 +80,12 @@ struct MainWalletView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .cashuTokenReceived)) { note in
             guard let amount = note.userInfo?["amount"] as? UInt64 else { return }
+            // The home balance + delta are sat-denominated. A non-sat receive
+            // (eur/usd/…) doesn't move the sat balance and is confirmed on its own
+            // success screen, so skip the delta rather than flash a misleading
+            // "+N sat".
+            let unit = note.userInfo?["unit"] as? String ?? "sat"
+            guard unit.lowercased() == "sat" else { return }
             let fee = note.userInfo?["fee"] as? UInt64
             // Only background receives (poster sets "homeHaptic") buzz here; in-flow
             // receives own the success haptic on their confirmation surface.

@@ -58,12 +58,13 @@ class LightningService: ObservableObject {
     func createMintQuote(
         amount: UInt64?,
         method: PaymentMethodKind = .bolt11,
-        targetMintURL: String? = nil
+        targetMintURL: String? = nil,
+        unit: Cdk.CurrencyUnit = .sat
     ) async throws -> MintQuoteInfo {
         guard let activeMint = getActiveMint() else {
             throw WalletError.notInitialized
         }
-        
+
         isLoading = true
         defer { isLoading = false }
 
@@ -82,7 +83,13 @@ class LightningService: ObservableObject {
         }
 
         let mintUrl = MintUrl(url: targetMintURL ?? activeMint.url)
-        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+        // Mint into the selected unit's wallet (amount is in that unit's base
+        // units). Ensure a non-sat per-unit wallet exists first (sat is always
+        // tracked) — mirrors TokenService.sendTokens.
+        if PaymentRequestDecoder.unitDescription(unit) != "sat" {
+            try await repo.createWallet(mintUrl: mintUrl, unit: unit, targetProofCount: nil)
+        }
+        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: unit)
 
         let quote = try await wallet.mintQuote(
             paymentMethod: method.cdkMethod,
@@ -147,7 +154,8 @@ class LightningService: ObservableObject {
                 await persistMintQuoteIfNeeded(existingQuote, paymentMethod: .bolt12)
             }
 
-            let wallet = try await repo.getWallet(mintUrl: existingQuote.mintUrl, unit: .sat)
+            // Poll through the quote's own unit wallet, not an assumed sat one.
+            let wallet = try await repo.getWallet(mintUrl: existingQuote.mintUrl, unit: existingQuote.unit)
             let quote = try await wallet.checkMintQuote(quoteId: quoteId)
             let paymentMethod = PaymentMethodKind.from(quote.paymentMethod) ?? storedPaymentMethod ?? .bolt11
             let refreshedQuote = mintQuoteForLocalStorage(
@@ -197,6 +205,9 @@ class LightningService: ObservableObject {
 
         let mintUrl: MintUrl
         let amountSplitTarget: SplitTarget
+        // Redeem into the quote's own unit wallet (also makes resuming a
+        // persisted non-sat quote correct). Defaults to sat when no stored quote.
+        let quoteUnit: Cdk.CurrencyUnit
 
         if let walletDatabase = walletDatabase(),
            let existingQuote = try await walletDatabase.getMintQuote(quoteId: quoteId) {
@@ -222,6 +233,7 @@ class LightningService: ObservableObject {
 
             mintUrl = normalizedQuote.mintUrl
             amountSplitTarget = .none
+            quoteUnit = normalizedQuote.unit
 
             if storedPaymentMethod == .onchain,
                normalizedQuote.amountPaid.value <= normalizedQuote.amountIssued.value {
@@ -254,11 +266,12 @@ class LightningService: ObservableObject {
         } else if let activeMint = getActiveMint() {
             mintUrl = MintUrl(url: activeMint.url)
             amountSplitTarget = .none
+            quoteUnit = .sat
         } else {
             throw WalletError.notInitialized
         }
 
-        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: quoteUnit)
         let proofs = try await wallet.mintUnified(
             quoteId: quoteId,
             amountSplitTarget: amountSplitTarget,
@@ -629,7 +642,8 @@ class LightningService: ObservableObject {
             paymentMethod: paymentMethod,
             state: mintQuoteState(from: quote, paymentMethod: paymentMethod),
             expiry: displayExpiry(quote.expiry),
-            createdAt: createdAt
+            createdAt: createdAt,
+            unit: PaymentRequestDecoder.unitDescription(quote.unit)
         )
     }
 

@@ -112,33 +112,35 @@ final class CurrencyAmountTests: XCTestCase {
 final class CurrencyRegistryTests: XCTestCase {
 
     func testLookupSatByMintUnit() {
-        let currency = CurrencyRegistry.currency(forMintUnit: "sat")
-        XCTAssertNotNil(currency)
-        XCTAssertEqual(currency?.code, "SAT")
+        XCTAssertEqual(CurrencyRegistry.currency(forMintUnit: "sat").code, "SAT")
     }
 
     func testLookupSatsByMintUnit() {
-        XCTAssertEqual(CurrencyRegistry.currency(forMintUnit: "sats")?.code, "SAT")
+        XCTAssertEqual(CurrencyRegistry.currency(forMintUnit: "sats").code, "SAT")
     }
 
     func testLookupSatoshiByMintUnit() {
-        XCTAssertEqual(CurrencyRegistry.currency(forMintUnit: "satoshi")?.code, "SAT")
+        XCTAssertEqual(CurrencyRegistry.currency(forMintUnit: "satoshi").code, "SAT")
     }
 
     func testLookupUSDByMintUnit() {
-        XCTAssertEqual(CurrencyRegistry.currency(forMintUnit: "usd")?.code, "USD")
+        XCTAssertEqual(CurrencyRegistry.currency(forMintUnit: "usd").code, "USD")
     }
 
     func testLookupEURByMintUnit() {
-        XCTAssertEqual(CurrencyRegistry.currency(forMintUnit: "eur")?.code, "EUR")
+        XCTAssertEqual(CurrencyRegistry.currency(forMintUnit: "eur").code, "EUR")
     }
 
-    func testLookupUnknownMintUnitReturnsNil() {
-        XCTAssertNil(CurrencyRegistry.currency(forMintUnit: "xyz"))
+    // Unknown/custom units now fall back to a GenericCurrency (never nil) so
+    // arbitrary mint units are supported, not just SAT/USD/EUR.
+    func testLookupUnknownMintUnitFallsBackToGeneric() {
+        let currency = CurrencyRegistry.currency(forMintUnit: "xyz")
+        XCTAssertEqual(currency.code, "XYZ")
+        XCTAssertEqual(currency.decimals, 0)
     }
 
-    func testLookupEmptyMintUnitReturnsNil() {
-        XCTAssertNil(CurrencyRegistry.currency(forMintUnit: ""))
+    func testLookupEmptyMintUnitFallsBackToGeneric() {
+        XCTAssertEqual(CurrencyRegistry.currency(forMintUnit: "").decimals, 0)
     }
 
     func testLookupSATByCode() {

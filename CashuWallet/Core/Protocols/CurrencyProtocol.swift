@@ -62,6 +62,23 @@ struct EURCurrency: Currency {
     let symbolPosition = CurrencySymbolPosition.before
 }
 
+/// Fallback for an arbitrary mint unit the registry doesn't know about (any
+/// custom unit string a mint might advertise). Treated as an integer base unit
+/// (no decimals) and displayed with the raw code as a trailing label.
+struct GenericCurrency: Currency {
+    let code: String
+    let symbol = ""
+    let decimals = 0
+    let displayName: String
+    let symbolPosition = CurrencySymbolPosition.after
+
+    init(unit: String) {
+        let normalized = unit.uppercased()
+        self.code = normalized
+        self.displayName = normalized
+    }
+}
+
 // MARK: - Currency Amount
 
 /// A value with an associated currency
@@ -147,9 +164,11 @@ enum CurrencyRegistry {
         supportedCurrencies.first { $0.code.uppercased() == code.uppercased() }
     }
     
-    /// Map from mint unit string to currency
-    /// Mints may use "sat", "usd", "eur" as unit identifiers
-    static func currency(forMintUnit unit: String) -> (any Currency)? {
+    /// Map a mint unit string to a currency for entry precision + display.
+    /// Known units resolve to their built-in currency; any other (custom) unit
+    /// falls back to a `GenericCurrency` so the result is never nil and
+    /// arbitrary mint units are supported.
+    static func currency(forMintUnit unit: String) -> any Currency {
         switch unit.lowercased() {
         case "sat", "sats", "satoshi", "satoshis":
             return SatoshiCurrency()
@@ -158,7 +177,7 @@ enum CurrencyRegistry {
         case "eur", "euro", "euros":
             return EURCurrency()
         default:
-            return nil
+            return GenericCurrency(unit: unit)
         }
     }
 }

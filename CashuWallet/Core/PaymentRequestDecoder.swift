@@ -324,6 +324,26 @@ enum PaymentRequestDecoder {
         }
     }
 
+    /// Inverse of `unitDescription`: maps a mint's unit string to a CDK
+    /// `CurrencyUnit`. Unknown strings pass through as `.custom(unit:)` so
+    /// arbitrary mint units are supported, not just sat/usd/eur.
+    static func currencyUnit(from unit: String) -> Cdk.CurrencyUnit {
+        switch unit.lowercased() {
+        case "sat":
+            return .sat
+        case "msat":
+            return .msat
+        case "usd":
+            return .usd
+        case "eur":
+            return .eur
+        case "auth":
+            return .auth
+        default:
+            return .custom(unit: unit)
+        }
+    }
+
     private static func bitcoinPaymentURI(from raw: String) -> BitcoinPaymentURI? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let components = URLComponents(string: trimmed),

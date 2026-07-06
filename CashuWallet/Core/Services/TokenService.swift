@@ -42,7 +42,7 @@ class TokenService: ObservableObject {
     ///   - amount: Amount to send in satoshis
     ///   - memo: Optional memo to include
     /// - Returns: Result containing token string and fee paid
-    func sendTokens(amount: UInt64, memo: String? = nil, p2pkPubkey: String? = nil, mintUrl preferredMintURL: String? = nil) async throws -> SendTokenResult {
+    func sendTokens(amount: UInt64, memo: String? = nil, p2pkPubkey: String? = nil, mintUrl preferredMintURL: String? = nil, unit: Cdk.CurrencyUnit = .sat) async throws -> SendTokenResult {
         guard let repo = walletRepository() else {
             throw WalletError.notInitialized
         }
@@ -59,7 +59,14 @@ class TokenService: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        let wallet = try await repo.getWallet(mintUrl: MintUrl(url: mintUrlString), unit: .sat)
+        let mintUrl = MintUrl(url: mintUrlString)
+        // For a non-sat unit, ensure the per-unit wallet exists before fetching
+        // it (the sat wallet is always already tracked). `amount` is denominated
+        // in this unit's base units (e.g. eur/usd cents).
+        if PaymentRequestDecoder.unitDescription(unit) != "sat" {
+            try await repo.createWallet(mintUrl: mintUrl, unit: unit, targetProofCount: nil)
+        }
+        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: unit)
         
         let sendMemo = memo.map { SendMemo(memo: $0, includeMemo: true) }
         let normalizedP2PKPubkey = try normalizedP2PKPubkey(p2pkPubkey)
@@ -126,9 +133,12 @@ class TokenService: ObservableObject {
         // Parse the token string
         let token = try Token.decode(encodedToken: tokenString)
         let tokenMintUrl = try token.mintUrl()
-        
+        // Redeem into the token's own unit (sat, eur, usd, …) rather than
+        // assuming sat, so non-sat tokens land in the matching per-unit wallet.
+        let tokenUnit = token.unit() ?? .sat
+
         // Ensure the mint is added with the correct unit
-        try await repo.createWallet(mintUrl: tokenMintUrl, unit: .sat, targetProofCount: nil)
+        try await repo.createWallet(mintUrl: tokenMintUrl, unit: tokenUnit, targetProofCount: nil)
 
         // Offer the full signing set (primary seed-derived key + stored keys) so a
         // token locked to the user's own identity is redeemable.
@@ -172,7 +182,7 @@ class TokenService: ObservableObject {
         var lastError: Error?
         var didRestore = false
         for attempt in 0..<maxAttempts {
-            let wallet = try await repo.getWallet(mintUrl: tokenMintUrl, unit: .sat)
+            let wallet = try await repo.getWallet(mintUrl: tokenMintUrl, unit: tokenUnit)
             do {
                 let amount = try await wallet.receive(token: token, options: receiveOptions)
                 if let matchingLocalP2PKKey {
@@ -230,12 +240,13 @@ class TokenService: ObservableObject {
         let token = try Token.decode(encodedToken: tokenString)
         let mintUrl = try token.mintUrl()
         let proofs = try token.proofsSimple()
-        
+        let tokenUnit = token.unit() ?? .sat
+
         // Ensure the mint is added with the correct unit
-        try await repo.createWallet(mintUrl: mintUrl, unit: .sat, targetProofCount: nil)
-        
+        try await repo.createWallet(mintUrl: mintUrl, unit: tokenUnit, targetProofCount: nil)
+
         // Get the wallet for this mint
-        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: .sat)
+        let wallet = try await repo.getWallet(mintUrl: mintUrl, unit: tokenUnit)
         
         guard let firstProof = proofs.first else {
             return 0
@@ -275,8 +286,9 @@ class TokenService: ObservableObject {
         do {
             let tokenObj = try Token.decode(encodedToken: token)
             let mintUrlObj = MintUrl(url: mintUrl)
+            let tokenUnit = tokenObj.unit() ?? .sat
 
-            let wallet = try await repo.getWallet(mintUrl: mintUrlObj, unit: .sat)
+            let wallet = try await repo.getWallet(mintUrl: mintUrlObj, unit: tokenUnit)
             let keysets = try await wallet.getMintKeysets(filter: .all)
             let proofs = try tokenObj.proofs(mintKeysets: keysets)
 
