@@ -1065,47 +1065,88 @@ struct UnifiedSendView: View {
                         .padding(.top, 10)
                 }
 
-                // Two (or three) plain action rows, generously spaced — no header,
-                // no divider.
-                VStack(alignment: .leading, spacing: 14) {
-                    actionRow(
-                        icon: "qrcode.viewfinder",
-                        title: "Scan QR Code",
-                        subtitle: "Pay or receive by scanning",
-                        showsChevron: false,
-                        action: openScanner
-                    )
-
-                    actionRow(
-                        icon: "banknote",
-                        title: "Create ecash",
-                        subtitle: "Generate a bearer token to share",
-                        showsChevron: false,
-                        action: {
-                            HapticFeedback.selection()
-                            route = .ecash
-                        }
-                    )
-
-                    if NFCNDEFReaderSession.readingAvailable {
-                        actionRow(
-                            icon: "wave.3.right.circle.fill",
-                            title: "Contactless",
-                            subtitle: "Tap to pay nearby",
-                            showsChevron: false,
-                            action: {
-                                HapticFeedback.selection()
-                                onContactless()
-                            }
-                        )
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.top, 40)
+                // A centered row of round Liquid Glass icon buttons — the primary
+                // "ways to send" (Scan · Ecash · Tap), one-word label under each.
+                sendMethodRow
+                    .padding(.horizontal)
+                    .padding(.top, 32)
             }
             .padding(.bottom, 24)
         }
         .scrollDismissesKeyboard(.interactively)
+    }
+
+    // MARK: Send-method buttons
+
+    /// The primary "ways to send" as a centered row of round Liquid Glass icon
+    /// buttons. The `HStack` is wrapped in a `GlassEffectContainer` on iOS 26 so
+    /// the adjacent circular glass surfaces sample light consistently (glass
+    /// can't sample other glass) — same technique as the home Receive/Send row.
+    private var sendMethodRow: some View {
+        let row = HStack(spacing: 28) {
+            sendMethodButton(icon: "qrcode.viewfinder", label: "Scan",
+                             a11y: "Scan QR code", action: openScanner)
+
+            sendMethodButton(icon: "banknote", label: "Ecash",
+                             a11y: "Create ecash") {
+                HapticFeedback.selection()
+                route = .ecash
+            }
+
+            if NFCNDEFReaderSession.readingAvailable {
+                sendMethodButton(icon: "wave.3.right", label: "Tap",
+                                 a11y: "Contactless, tap to pay nearby") {
+                    HapticFeedback.selection()
+                    onContactless()
+                }
+            }
+        }
+
+        return Group {
+            if #available(iOS 26, *) {
+                GlassEffectContainer(spacing: 28) { row }
+            } else {
+                row
+            }
+        }
+        .frame(maxWidth: .infinity)   // center the group on the leading-aligned canvas
+    }
+
+    /// One round glass icon button with a one-word caption on the canvas below it.
+    /// iOS 26 uses Apple's native circular glass button style (which owns its own
+    /// interactive press); iOS 18–25 falls back to a `.quaternary` circle.
+    @ViewBuilder
+    private func sendMethodButton(
+        icon: String, label: String, a11y: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 8) {
+            if #available(iOS 26, *) {
+                Button(action: action) {
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .frame(width: 60, height: 60)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+            } else {
+                Button(action: action) {
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .foregroundStyle(.primary)
+                        .frame(width: 60, height: 60)
+                        .background(.quaternary, in: Circle())
+                }
+                .buttonStyle(PressableButtonStyle())
+            }
+
+            Text(label)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(a11y)
+        .accessibilityAddTraits(.isButton)
     }
 
     private var destinationField: some View {
@@ -2286,49 +2327,7 @@ struct UnifiedSendView: View {
             .padding(.horizontal, 4)
     }
 
-    // MARK: Action row + input actions
-
-    private func actionRow(
-        icon: String,
-        title: String,
-        subtitle: String,
-        showsChevron: Bool = true,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-
-                Spacer(minLength: 8)
-
-                // The "ways to send" rows are actions (invoke a tool/mode/sheet),
-                // not navigation pushes, so they omit the disclosure chevron. The
-                // Matching / Receive-this rows keep it — they advance the pay flow.
-                if showsChevron {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
+    // MARK: Input actions
 
     private func openScanner() {
         HapticFeedback.selection()

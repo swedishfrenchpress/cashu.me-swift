@@ -499,6 +499,17 @@ right tool for the job.
   Typography and padding match `FullWidthCapsuleButtonStyle` exactly
   (`.body.weight(.semibold)`, `.padding(.vertical, 18)`) so it reads as one
   family.
+- **Send-method row (carve-out) — round glass icon buttons.** The Send chooser
+  (`UnifiedSendView`) offers its "ways to send" — Scan · Ecash · Tap — as a
+  centered row of **circular** Liquid Glass icon buttons, each a monochrome SF
+  Symbol over a one-word `.caption.weight(.medium)` label on the canvas. On
+  iOS 26 each circle uses Apple's native `.buttonStyle(.glass)` +
+  `.buttonBorderShape(.circle)` inside a `GlassEffectContainer`; iOS 18–25 falls
+  back to a `.quaternary` circle with `PressableButtonStyle`. This is a
+  deliberate, bounded expansion of the surface vocabulary beyond the full-width
+  capsule — justified because here the SF Symbol *is* the affordance (icon-only,
+  no text on the surface) and it echoes the circular glass button the home row
+  itself once carried (see Capsule + Circle + Capsule, above).
 - **Press feedback — `PressableButtonStyle`**: 0.97 scale on press down
   (`.snappy(0.09)`), spring back on release (`.snappy(0.18)`). Apply only
   where the glass style doesn't already carry feedback (the chooser
