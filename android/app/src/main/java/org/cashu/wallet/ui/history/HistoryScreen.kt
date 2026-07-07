@@ -95,7 +95,6 @@ fun HistoryScreen(
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var refreshing by remember { mutableStateOf(false) }
-    var checkingTxId by remember { mutableStateOf<String?>(null) }
     var requestPendingDelete by remember { mutableStateOf<CashuRequest?>(null) }
 
     LaunchedEffect(Unit) {
@@ -228,19 +227,6 @@ fun HistoryScreen(
                                             else null,
                                         ),
                                         onClick = { onOpenTransaction(tx) },
-                                        isChecking = checkingTxId == tx.id,
-                                        onRefresh = if (tx.status == TransactionStatus.Pending) {
-                                            {
-                                                checkingTxId = tx.id
-                                                walletManager.launch {
-                                                    try {
-                                                        walletManager.loadTransactions()
-                                                    } finally {
-                                                        checkingTxId = null
-                                                    }
-                                                }
-                                            }
-                                        } else null,
                                     )
                                 }
                                 is HistoryItem.Req -> {

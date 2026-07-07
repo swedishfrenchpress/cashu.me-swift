@@ -104,7 +104,6 @@ fun HomeScreen(
 
     var receiveChooserOpen by remember { mutableStateOf(false) }
     var sendChooserOpen by remember { mutableStateOf(false) }
-    var checkingTxId by remember { mutableStateOf<String?>(null) }
 
     val balanceDisplay = remember(walletState.balance, settings, priceState) {
         formatter.displayText(
@@ -191,19 +190,6 @@ fun HomeScreen(
                                     else null,
                                 ),
                                 onClick = { onOpenTransaction(tx) },
-                                isChecking = checkingTxId == tx.id,
-                                onRefresh = if (tx.status == TransactionStatus.Pending) {
-                                    {
-                                        checkingTxId = tx.id
-                                        walletManager.launch {
-                                            try {
-                                                walletManager.loadTransactions()
-                                            } finally {
-                                                checkingTxId = null
-                                            }
-                                        }
-                                    }
-                                } else null,
                             )
                         }
                         is HomeRecentItem.Req -> {

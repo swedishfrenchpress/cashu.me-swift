@@ -50,7 +50,6 @@ import androidx.compose.ui.unit.sp
 import kotlin.random.Random
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.WalletManager
-import org.cashu.wallet.ui.components.BoldPrimaryButton
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.PrimaryButton
@@ -187,7 +186,7 @@ private fun WelcomeFace(
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.weight(1f))
-        BoldPrimaryButton(
+        PrimaryButton(
             text = "Create wallet",
             onClick = onCreate,
             loading = isLoading,
