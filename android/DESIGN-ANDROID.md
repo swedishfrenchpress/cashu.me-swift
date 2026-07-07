@@ -92,6 +92,21 @@ Already in-tree and verified faithful; kept as the canonical mapping.
 
 ## 3. Screen inventory: iOS HEAD vs Android (re-sync targets)
 
+**2026-07-07 structural-parity pass:** every key screen was re-verified against
+the Swift source's exact element order (not just the Named Rules) and
+screenshot-compared on the emulator. Send has NO chooser — Home's Send opens the
+unified surface directly (`UnifiedSendScreen` ⇄ iOS `UnifiedSendView`:
+destination field with rail inference + round Scan · Ecash · Tap row); Receive
+keeps the 2-option chooser (iOS `WalletActionSheetView`; the 4-option
+`ReceiveView` in the Swift tree is Preview-only dead code). Settings root
+mirrors the iOS section order verbatim (Display with the Currency picker sheet
+and root ₿ toggle · Backup & Security · Payments with "Locked Ecash" ·
+Integrations · Privacy · About · Danger · version footer); AppearanceScreen was
+removed (theme follows the system — strict parity). Receive Lightning: mint row
+top, toolbar method menu (no segmented row), method-specific CTAs. Receive
+Ecash: tall token editor + **New Request creation** (NUT-18 over the wallet's
+Nostr identity via PaymentRequestBuilder + CashuRequestStore).
+
 | Surface | iOS (reference) | Android today | Re-sync work |
 |---|---|---|---|
 | Root gating | Loading → Onboarding → Tabs cross-dissolve | `CashuApp.kt` equivalent exists | Verify cross-fade, no swoop |
