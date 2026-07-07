@@ -25,6 +25,7 @@ data class SettingsState(
     val enableNWC: Boolean = false,
     val showP2PKButtonInDrawer: Boolean = false,
     val amountDisplayPrimary: String = "fiat",
+    val sentryEnabled: Boolean = false,
     val checkIncomingInvoices: Boolean = true,
     val periodicallyCheckIncomingInvoices: Boolean = true,
     val nostrSignerType: String = "SEED",
@@ -151,6 +152,9 @@ class SettingsManager(
     private val mutableState = MutableStateFlow(loadState())
     val state: StateFlow<SettingsState> = mutableState.asStateFlow()
 
+    // Wired by AppContainer (same pattern as NPCService.quoteClaimHandler).
+    var sentryService: SentryService? = null
+
     fun setUseBitcoinSymbol(value: Boolean) = update { settingsStore.useBitcoinSymbol = value }
     fun setShowFiatBalance(value: Boolean) = update {
         settingsStore.showFiatBalance = value
@@ -178,6 +182,13 @@ class SettingsManager(
         }
     }
     fun setShowP2PKButtonInDrawer(value: Boolean) = update { settingsStore.showP2PKButtonInDrawer = value }
+    // Mirrors Swift SettingsManager.sentryEnabled didSet: persist, then start/stop the SDK on change.
+    fun setSentryEnabled(value: Boolean) {
+        val previous = settingsStore.sentryEnabled
+        update { settingsStore.sentryEnabled = value }
+        if (value == previous) return
+        if (value) sentryService?.initialize() else sentryService?.shutdown()
+    }
     fun setBitcoinPriceCurrency(value: String) = update {
         val normalized = value.uppercase()
         if (normalized in supportedFiatCurrencies) {
@@ -361,6 +372,7 @@ class SettingsManager(
         enableNWC = settingsStore.enableNWC,
         showP2PKButtonInDrawer = settingsStore.showP2PKButtonInDrawer,
         amountDisplayPrimary = AmountDisplayPrimary.fromRaw(settingsStore.amountDisplayPrimary).rawValue,
+        sentryEnabled = settingsStore.sentryEnabled,
         checkIncomingInvoices = settingsStore.checkIncomingInvoices,
         periodicallyCheckIncomingInvoices = settingsStore.periodicallyCheckIncomingInvoices,
         nostrSignerType = settingsStore.nostrSignerType,

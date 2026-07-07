@@ -19,6 +19,13 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // Shared with iOS (SentryService.swift) — one Sentry project for both platforms.
+        // Override with -PsentryDsn=... (or gradle.properties); default keeps builds zero-setup.
+        val sentryDsn = providers.gradleProperty("sentryDsn").getOrElse(
+            "https://aff293071a9e53305e76990761d4b38f@o4511625394061312.ingest.de.sentry.io/4511625402712144"
+        )
+        buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
     }
 
     buildTypes {
@@ -82,6 +89,7 @@ dependencies {
     implementation(libs.bcur.kotlin)
     implementation(libs.cdk.kotlin)
     implementation(libs.coil.compose)
+    implementation(libs.sentry.android)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

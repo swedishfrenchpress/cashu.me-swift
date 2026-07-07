@@ -19,7 +19,7 @@ class TransactionDisplayTest {
             fee = 2,
         )
 
-        assertEquals("Lightning payment", TransactionDisplay.title(transaction))
+        assertEquals("Lightning paid", TransactionDisplay.title(transaction))
         assertEquals("Paid", TransactionDisplay.statusText(transaction))
         assertEquals("lnbc1test", TransactionDisplay.qrContent(transaction))
 
@@ -39,7 +39,7 @@ class TransactionDisplayTest {
 
         val fields = TransactionDisplay.detailFields(transaction)
 
-        assertEquals("On-chain payment", TransactionDisplay.title(transaction))
+        assertEquals("Bitcoin sent", TransactionDisplay.title(transaction))
         assertTrue(fields.any { it.label == "Address" && it.value == "bc1qaddress" })
         assertTrue(fields.any { it.label == "Transaction ID" && it.value == "txid" })
     }
