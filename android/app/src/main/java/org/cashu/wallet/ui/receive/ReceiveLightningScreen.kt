@@ -11,6 +11,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,18 +29,22 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.IosShare
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.UnfoldMore
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -56,6 +62,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
@@ -67,18 +75,22 @@ import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.UnitAmountEntry
 import org.cashu.wallet.Core.WalletManager
+import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.MintQuoteInfo
 import org.cashu.wallet.Models.MintQuoteState
 import org.cashu.wallet.Models.PaymentMethodKind
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
+import org.cashu.wallet.ui.components.MintAvatar
+import org.cashu.wallet.ui.components.MintPickerSheet
 import org.cashu.wallet.ui.components.NumberPad
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.components.UnitPickerSheet
 import org.cashu.wallet.ui.components.shareText
+import org.cashu.wallet.ui.theme.CapsuleShape
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
@@ -109,6 +121,7 @@ fun ReceiveLightningScreen(
     var paymentJustReceived by remember { mutableStateOf(false) }
     var selectedReceiveUnit by remember { mutableStateOf<String?>(null) }
     var unitPickerOpen by remember { mutableStateOf(false) }
+    var mintPickerOpen by remember { mutableStateOf(false) }
 
     val activeMint = walletState.activeMint
     val supportedMethods = activeMint?.supportedMintMethods?.ifEmpty { listOf(PaymentMethodKind.Bolt11) }
@@ -138,9 +151,9 @@ fun ReceiveLightningScreen(
                     val title = when (current) {
                         ReceiveLnFace.Input -> "Receive"
                         is ReceiveLnFace.Display -> when (current.quote.paymentMethod) {
-                            PaymentMethodKind.Bolt11 -> "Lightning invoice"
-                            PaymentMethodKind.Bolt12 -> "Lightning offer"
-                            PaymentMethodKind.Onchain -> "Bitcoin address"
+                            PaymentMethodKind.Bolt11 -> "Lightning Invoice"
+                            PaymentMethodKind.Bolt12 -> "Reusable Invoice"
+                            PaymentMethodKind.Onchain -> "Bitcoin Address"
                         }
                     }
                     Text(title, style = MaterialTheme.typography.titleMedium)
@@ -169,13 +182,46 @@ fun ReceiveLightningScreen(
                         }) {
                             Icon(Icons.Outlined.IosShare, contentDescription = "Share")
                         }
-                    } else if (current is ReceiveLnFace.Input && showsUnitSelector) {
-                        androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
-                            Text(
-                                text = effectiveUnit.uppercase(),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
+                    } else if (current is ReceiveLnFace.Input) {
+                        // Method picker rides the top bar (iOS parity): an icon
+                        // opening a menu, shown only when >1 method exists.
+                        if (supportedMethods.size > 1) {
+                            var methodMenuOpen by remember { mutableStateOf(false) }
+                            IconButton(onClick = { methodMenuOpen = true }) {
+                                Icon(
+                                    imageVector = method.menuIcon,
+                                    contentDescription = "Payment method",
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = methodMenuOpen,
+                                onDismissRequest = { methodMenuOpen = false },
+                            ) {
+                                supportedMethods.forEach { kind ->
+                                    DropdownMenuItem(
+                                        text = { Text(kind.displayName) },
+                                        leadingIcon = { Icon(kind.menuIcon, contentDescription = null) },
+                                        trailingIcon = if (kind == method) {
+                                            { Icon(Icons.Filled.Check, contentDescription = "Selected") }
+                                        } else null,
+                                        onClick = {
+                                            methodMenuOpen = false
+                                            method = kind
+                                            amount = ""
+                                            errorText = null
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        if (showsUnitSelector) {
+                            androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
+                                Text(
+                                    text = effectiveUnit.uppercase(),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
                         }
                     }
                 },
@@ -199,11 +245,13 @@ fun ReceiveLightningScreen(
                 ReceiveLnFace.Input -> InputFace(
                     amount = amount,
                     onAmountChange = { amount = it; errorText = null },
-                    supportedMethods = supportedMethods,
                     selectedMethod = method,
-                    onMethodChange = { method = it; amount = "" },
                     creating = creating,
-                    activeMintName = activeMint?.name ?: "No mint",
+                    mint = activeMint,
+                    mintBalanceText = activeMint?.let {
+                        formatter.formatWalletSats(it.balance, settings.useBitcoinSymbol)
+                    },
+                    onPickMint = { mintPickerOpen = true },
                     unitLabel = if (isSatUnit) "sat" else effectiveUnit.uppercase(),
                     decimals = currency.decimals,
                     errorText = errorText,
@@ -283,6 +331,20 @@ fun ReceiveLightningScreen(
         }
     }
 
+    if (mintPickerOpen) {
+        MintPickerSheet(
+            mints = walletState.mints,
+            activeMintUrl = activeMint?.url,
+            onSelect = { mint ->
+                scope.launch { walletManager.setActiveMint(mint) }
+                amount = ""
+                errorText = null
+                mintPickerOpen = false
+            },
+            onDismiss = { mintPickerOpen = false },
+        )
+    }
+
     if (unitPickerOpen) {
         UnitPickerSheet(
             units = activeMint?.effectiveMintUnits ?: listOf("sat"),
@@ -298,15 +360,20 @@ fun ReceiveLightningScreen(
     }
 }
 
+/**
+ * First face, in the iOS element order: mint selector row (top) → amount hero
+ * (with an ON-CHAIN badge for on-chain) → error → number pad → create CTA. The
+ * method picker lives in the top bar, not on the canvas.
+ */
 @Composable
 private fun InputFace(
     amount: String,
     onAmountChange: (String) -> Unit,
-    supportedMethods: List<PaymentMethodKind>,
     selectedMethod: PaymentMethodKind,
-    onMethodChange: (PaymentMethodKind) -> Unit,
     creating: Boolean,
-    activeMintName: String,
+    mint: MintInfo?,
+    mintBalanceText: String?,
+    onPickMint: () -> Unit,
     unitLabel: String,
     decimals: Int,
     errorText: String?,
@@ -317,33 +384,34 @@ private fun InputFace(
             .fillMaxSize()
             .padding(horizontal = CashuTheme.spacing.comfortable)
             .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(CashuTheme.spacing.snug))
-        Text(
-            text = activeMintName,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        if (supportedMethods.size > 1) {
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                supportedMethods.forEachIndexed { index, kind ->
-                    SegmentedButton(
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = supportedMethods.size,
-                        ),
-                        selected = kind == selectedMethod,
-                        onClick = { onMethodChange(kind) },
-                    ) {
-                        Text(kind.displayName)
-                    }
-                }
-            }
+        Spacer(Modifier.height(CashuTheme.spacing.default))
+        if (mint != null) {
+            MintSelectorRow(
+                mint = mint,
+                balanceText = mintBalanceText,
+                onClick = onPickMint,
+            )
         }
-
+        Spacer(Modifier.weight(1f))
+        if (selectedMethod == PaymentMethodKind.Onchain) {
+            Text(
+                text = "ON-CHAIN",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = CapsuleShape,
+                    )
+                    .padding(
+                        horizontal = CashuTheme.spacing.default,
+                        vertical = CashuTheme.spacing.micro,
+                    ),
+            )
+            Spacer(Modifier.height(CashuTheme.spacing.snug))
+        }
         AmountText(
             text = when {
                 amount.isNotEmpty() -> amount
@@ -357,16 +425,15 @@ private fun InputFace(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
         if (errorText != null) {
+            Spacer(Modifier.height(CashuTheme.spacing.default))
             InlineNotice(text = errorText)
         }
-
-        Spacer(modifier = Modifier.weight(1f, fill = true))
+        Spacer(Modifier.weight(1f))
         NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
         Spacer(Modifier.height(CashuTheme.spacing.micro))
         PrimaryButton(
-            text = if (creating) "Creating…" else "Create request",
+            text = if (creating) "Creating…" else selectedMethod.createActionTitle,
             onClick = onCreate,
             enabled = !creating,
             loading = creating,
@@ -374,6 +441,62 @@ private fun InputFace(
         Spacer(Modifier.navigationBarsPadding())
     }
 }
+
+/** Mint row: avatar + name + balance + change affordance (iOS mintSelector). */
+@Composable
+private fun MintSelectorRow(
+    mint: MintInfo,
+    balanceText: String?,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = CashuTheme.spacing.snug),
+    ) {
+        MintAvatar(mint = mint)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = mint.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (balanceText != null) {
+                Text(
+                    text = "Balance $balanceText",
+                    style = MaterialTheme.typography.bodySmall.withMonoDigits(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Icon(
+            imageVector = Icons.Outlined.UnfoldMore,
+            contentDescription = "Change mint",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(CashuTheme.spacing.loose),
+        )
+    }
+}
+
+private val PaymentMethodKind.menuIcon
+    get() = when (this) {
+        PaymentMethodKind.Bolt11 -> Icons.Outlined.Bolt
+        PaymentMethodKind.Bolt12 -> Icons.Outlined.Repeat
+        PaymentMethodKind.Onchain -> Icons.Outlined.CurrencyBitcoin
+    }
+
+private val PaymentMethodKind.createActionTitle: String
+    get() = when (this) {
+        PaymentMethodKind.Bolt11 -> "Create Invoice"
+        PaymentMethodKind.Bolt12 -> "Create Offer"
+        PaymentMethodKind.Onchain -> "Get Address"
+    }
 
 @Composable
 private fun DisplayFace(
