@@ -294,9 +294,18 @@ private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
     ) {
         if (received) {
+            // Live celebration grows in gently (0.9 → 1, the one delight beat);
+            // the persistent N-payments state is quiet — no animation.
             AnimatedVisibility(
-                visible = celebrate,
-                enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(),
+                visible = true,
+                enter = if (celebrate) {
+                    scaleIn(
+                        animationSpec = spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow),
+                        initialScale = 0.9f,
+                    ) + fadeIn()
+                } else {
+                    fadeIn()
+                },
                 exit = fadeOut(),
             ) {
                 Icon(
@@ -306,12 +315,6 @@ private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean
                     modifier = Modifier.size(CashuTheme.spacing.loose),
                 )
             }
-            Icon(
-                imageVector = Icons.Outlined.CheckCircle,
-                contentDescription = null,
-                tint = CashuTheme.colors.received,
-                modifier = Modifier.size(CashuTheme.spacing.loose),
-            )
             Text(
                 text = when {
                     celebrate -> "Payment received!"
