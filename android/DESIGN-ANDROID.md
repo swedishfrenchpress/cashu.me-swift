@@ -186,6 +186,13 @@ No other Android-only user-facing surfaces were found.
    `LockedReceiveRequest.build()`; confirm Android's locked-receive path matches.
 7. **Sentry opt-in parity** — landed on Android (#82); keep copy in sync with iOS
    privacy settings when that section is re-synced.
+8. **Home received-delta beat** — iOS rolls the hero balance and shows a
+   transient monochrome `+amount` in the fiat slot on background receives
+   (`MainWalletView.receivedDeltaBeat`). Android's balance digits already roll
+   (`Amount.kt`); the `+amount` beat + success haptic for background receives
+   needs a receive-event signal from WalletManager.
+9. **Non-sat History** — extending the timeline beyond sat requires a `unit`
+   field on `WalletTransaction` first; do together with iOS (same deferral).
 
 ## 8. Known no-clean-equivalent flags
 
