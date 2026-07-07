@@ -13,9 +13,34 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import org.cashu.wallet.Core.AmountFormatter
+import org.cashu.wallet.Core.Protocols.CurrencyAmount
+import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Models.CashuRequest
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
+
+/**
+ * Trailing amount for a request row, in the request's own unit: cumulative
+ * received when payments landed, the fixed target while waiting, nothing for
+ * a waiting any-amount request.
+ */
+fun requestRowAmount(
+    request: CashuRequest,
+    formatter: AmountFormatter,
+    useBitcoinSymbol: Boolean,
+): String? {
+    val amount = when {
+        request.totalReceived > 0L -> request.totalReceived
+        request.amount != null && request.amount > 0L -> request.amount
+        else -> return null
+    }
+    return if (request.unit.equals("sat", ignoreCase = true)) {
+        formatter.formatWalletSats(amount, useBitcoinSymbol)
+    } else {
+        CurrencyAmount(amount, CurrencyRegistry.currencyForMintUnit(request.unit)).formatted()
+    }
+}
 
 /**
  * Cashu Request timeline row, paired with [TransactionRow] in History and Home

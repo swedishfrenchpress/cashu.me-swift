@@ -61,6 +61,8 @@ import java.util.Date
 import kotlinx.coroutines.delay
 import org.cashu.wallet.Core.AmountFormatter
 import org.cashu.wallet.Core.CashuRequestStore
+import org.cashu.wallet.Core.Protocols.CurrencyAmount
+import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.AmountText
@@ -172,9 +174,18 @@ fun CashuRequestDetailScreen(
             Spacer(Modifier.height(CashuTheme.spacing.snug))
             QrCard(content = request.encoded, shareSubject = "Cashu Request", staticOnly = true)
 
+            // Request amounts render in the request's own unit.
+            val isSatRequest = request.unit.equals("sat", ignoreCase = true)
+            val requestCurrency = CurrencyRegistry.currencyForMintUnit(request.unit)
+            fun formatRequestAmount(amount: Long): String = if (isSatRequest) {
+                formatter.formatWalletSats(amount, settings.useBitcoinSymbol)
+            } else {
+                CurrencyAmount(amount, requestCurrency).formatted()
+            }
+
             if (request.amount != null && request.amount > 0L) {
                 AmountText(
-                    text = formatter.formatWalletSats(request.amount, settings.useBitcoinSymbol),
+                    text = formatRequestAmount(request.amount),
                     style = MaterialTheme.typography.headlineSmall.withMonoDigits(),
                 )
             }
@@ -199,7 +210,9 @@ fun CashuRequestDetailScreen(
                 CanvasDivider(leadingInset = 16)
                 InspectorRow(
                     label = "Amount",
-                    value = request.amount?.let { "$it sat" } ?: "Any",
+                    value = request.amount?.let {
+                        if (isSatRequest) "$it sat" else formatRequestAmount(it)
+                    } ?: "Any",
                     leadingIcon = Icons.Outlined.AccountBalanceWallet,
                     valueMonospaced = true,
                 )
@@ -219,7 +232,7 @@ fun CashuRequestDetailScreen(
                     CanvasDivider(leadingInset = 16)
                     InspectorRow(
                         label = "Total received",
-                        value = formatter.formatWalletSats(request.totalReceived, settings.useBitcoinSymbol),
+                        value = formatRequestAmount(request.totalReceived),
                         leadingIcon = Icons.Outlined.CheckCircle,
                         valueMonospaced = true,
                     )

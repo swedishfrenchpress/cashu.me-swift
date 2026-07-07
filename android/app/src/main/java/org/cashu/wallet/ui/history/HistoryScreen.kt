@@ -64,6 +64,7 @@ import org.cashu.wallet.Models.TransactionStatus
 import org.cashu.wallet.Models.WalletTransaction
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuRequestRow
+import org.cashu.wallet.ui.components.requestRowAmount
 import org.cashu.wallet.ui.components.CashuSearchBar
 import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.SectionHeader
@@ -233,16 +234,9 @@ fun HistoryScreen(
                                     CashuRequestRow(
                                         request = item.request,
                                         timestamp = formatRelativeTimestamp(item.request.createdAtEpochMillis),
-                                        primaryAmountText = when {
-                                            item.request.totalReceived > 0L -> formatter.formatWalletSats(
-                                                item.request.totalReceived, settings.useBitcoinSymbol,
-                                            )
-                                            item.request.amount != null && item.request.amount > 0L ->
-                                                formatter.formatWalletSats(
-                                                    item.request.amount, settings.useBitcoinSymbol,
-                                                )
-                                            else -> null
-                                        },
+                                        primaryAmountText = requestRowAmount(
+                                            item.request, formatter, settings.useBitcoinSymbol,
+                                        ),
                                         secondaryAmountText = null,
                                         onClick = { onOpenCashuRequest(item.request) },
                                         onLongClick = { requestPendingDelete = item.request },
