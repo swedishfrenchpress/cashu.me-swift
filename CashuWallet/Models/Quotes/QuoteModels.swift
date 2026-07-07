@@ -12,6 +12,10 @@ struct MintQuoteInfo: Identifiable {
     /// `MintQuoteCreatedAtStore`. nil for every other rail.
     let createdAt: Date?
 
+    /// The unit the quote mints into ("sat", "eur", …). `amount` is denominated
+    /// in this unit's base units. Defaults to "sat" for older/sat quotes.
+    var unit: String = "sat"
+
     var isExpired: Bool {
         guard let expiry = expiry, expiry > 0 else { return false }
         return Date().timeIntervalSince1970 > Double(expiry)

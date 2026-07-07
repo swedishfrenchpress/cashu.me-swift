@@ -31,6 +31,11 @@ struct ReceiveLightningView: View {
     @State private var quoteCreatedAt: Date?
     @State private var monitoredQuoteId: String?
 
+    // Multi-unit mint: the user's explicit unit pick for this receive (nil = the
+    // mint's default mintable unit), plus the picker flag.
+    @State private var selectedReceiveUnit: String?
+    @State private var showUnitPicker = false
+
     var body: some View {
         NavigationStack {
             Group {
@@ -105,6 +110,24 @@ struct ReceiveLightningView: View {
                         .accessibilityHint("Opens the receive method picker")
                     }
                 }
+
+                // Unit selector — only in the amount-entry state, for a mint that
+                // can mint more than one unit (on-chain is amountless, no unit).
+                // Declared after the method button so it sits to its right.
+                if mintQuote == nil, !isCreatingRequest, selectedMethod != .onchain,
+                   let mint = walletManager.activeMint, mint.supportsMultipleMintUnits {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            HapticFeedback.selection()
+                            showUnitPicker = true
+                        } label: {
+                            Text(effectiveUnit.uppercased())
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .accessibilityLabel("Unit: \(effectiveUnit.uppercased())")
+                        .accessibilityHint("Choose the unit to mint")
+                    }
+                }
             }
             .sheet(isPresented: $showMintPicker) {
                 MintSelectorSheet(selectedMint: $walletManager.activeMint)
@@ -116,6 +139,14 @@ struct ReceiveLightningView: View {
                     selectedOption: selectedOption,
                     options: availableMethodOptions,
                     onSelect: { applyMethodOption($0) }
+                )
+                .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showUnitPicker) {
+                UnitSelectorSheet(
+                    units: walletManager.activeMint?.mintUnits ?? ["sat"],
+                    selectedUnit: effectiveUnit,
+                    onSelect: selectReceiveUnit
                 )
                 .presentationDetents([.medium])
             }
@@ -133,6 +164,10 @@ struct ReceiveLightningView: View {
                 // field here — that would fight the user's explicit picker choice.
             }
             .onChange(of: entryUnit) { oldUnit, newUnit in
+                // Only the sats↔fiat display flip re-expresses the typed string.
+                // A non-sat mint unit is entered directly and must not be
+                // reinterpreted through the sat price.
+                guard isSatReceive else { return }
                 // Flip (or a price load that changes the effective unit): carry
                 // the typed amount across, converted, so it stays equivalent.
                 amountString = AmountFormatter.entryConverted(raw: amountString, from: oldUnit, to: newUnit)
@@ -193,7 +228,51 @@ struct ReceiveLightningView: View {
     }
 
     /// Satoshis represented by the typed amount, interpreted per `entryUnit`.
-    private var amountSats: UInt64 { AmountFormatter.entrySats(raw: amountString, unit: entryUnit) }
+    /// Zero outside sat mode (a non-sat amount has no sat value).
+    private var amountSats: UInt64 {
+        guard isSatReceive else { return 0 }
+        return AmountFormatter.entrySats(raw: amountString, unit: entryUnit)
+    }
+
+    // MARK: - Active mint unit
+
+    /// The unit this receive will mint into — the user's pick when the mint can
+    /// mint it, otherwise the mint's default mintable unit. Auto-resets when the
+    /// active mint changes to one that can't mint the selection.
+    private var effectiveUnit: String {
+        walletManager.activeMint?.resolvedMintUnit(selectedReceiveUnit) ?? "sat"
+    }
+
+    private var isSatReceive: Bool { effectiveUnit.lowercased() == "sat" }
+    private var receiveUnitCurrency: any Currency { CurrencyRegistry.currency(forMintUnit: effectiveUnit) }
+    private var receiveUnitDecimals: Int { receiveUnitCurrency.decimals }
+
+    /// The amount actually minted, in the active unit's base units (sats for
+    /// sat; cents for eur/usd; integer for a custom unit).
+    private var amountBaseUnits: UInt64 {
+        isSatReceive ? amountSats : AmountFormatter.entryBaseUnits(raw: amountString, decimals: receiveUnitDecimals)
+    }
+
+    /// Big-number display for a non-sat entry, formatted in the active unit.
+    private var receiveUnitEntryDisplay: String {
+        CurrencyAmount(value: amountBaseUnits, currency: receiveUnitCurrency).formatted()
+    }
+
+    private func selectReceiveUnit(_ unit: String) {
+        selectedReceiveUnit = unit
+        // The typed amount's meaning changes with the unit — clear it.
+        amountString = ""
+        errorMessage = nil
+        HapticFeedback.selection()
+    }
+
+    /// Format a mint-quote amount in its own unit: sats keep the existing style,
+    /// other units render via their `Currency` (e.g. "€5.00").
+    private func formatQuoteAmount(_ amount: UInt64, unit: String) -> String {
+        unit.lowercased() == "sat"
+            ? AmountFormatter.sats(amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+            : CurrencyAmount(value: amount, currency: CurrencyRegistry.currency(forMintUnit: unit)).formatted()
+    }
 
     /// The one path that submits no amount: a BOLT12 offer with "Any amount" lit.
     /// Everything else (BOLT11, on-chain, a BOLT12 offer with a typed amount)
@@ -205,7 +284,7 @@ struct ReceiveLightningView: View {
     private var canCreateRequest: Bool {
         guard !isCreatingRequest else { return false }
         if isAmountlessOffer { return true }
-        return amountSats > 0
+        return amountBaseUnits > 0
     }
 
     // MARK: - Amount Input View
@@ -230,12 +309,18 @@ struct ReceiveLightningView: View {
 
             Spacer()
 
-            NumberPadAmountInput(amountString: $amountString, unit: entryUnit)
-                .padding(.horizontal, 24)
-                .onChange(of: amountString) { _, newValue in
-                    // Typing a digit takes over from the amountless offer.
-                    if isAmountless && !newValue.isEmpty { isAmountless = false }
+            Group {
+                if isSatReceive {
+                    NumberPadAmountInput(amountString: $amountString, unit: entryUnit)
+                } else {
+                    NumberPadAmountInput(amountString: $amountString, decimals: receiveUnitDecimals)
                 }
+            }
+            .padding(.horizontal, 24)
+            .onChange(of: amountString) { _, newValue in
+                // Typing a digit takes over from the amountless offer.
+                if isAmountless && !newValue.isEmpty { isAmountless = false }
+            }
 
             Button(action: createRequest) {
                 if isCreatingRequest {
@@ -260,13 +345,25 @@ struct ReceiveLightningView: View {
                     .transition(.opacity)
             }
 
-            CurrencyAmountDisplay(
-                sats: amountSats,
-                primary: $settings.amountDisplayPrimary,
-                entryRaw: amountString
-            )
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Request amount: \(amountString.isEmpty ? "0" : amountString) sats")
+            if isSatReceive {
+                CurrencyAmountDisplay(
+                    sats: amountSats,
+                    primary: $settings.amountDisplayPrimary,
+                    entryRaw: amountString
+                )
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Request amount: \(amountString.isEmpty ? "0" : amountString) sats")
+            } else {
+                // Non-sat mint unit: show it directly, no BTC-price flip.
+                Text(receiveUnitEntryDisplay)
+                    .font(.system(size: 64, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.4)
+                    .lineLimit(1)
+                    .contentTransition(.numericText(value: Double(amountBaseUnits)))
+                    .animation(.snappy, value: amountBaseUnits)
+                    .accessibilityLabel("Request amount: \(amountString.isEmpty ? "0" : amountString) \(effectiveUnit)")
+            }
         }
         .animation(.snappy, value: selectedMethod)
     }
@@ -392,12 +489,19 @@ struct ReceiveLightningView: View {
                         }
 
                     if let amount = quote.amount, amount > 0 {
-                        CurrencyAmountDisplay(
-                            sats: amount,
-                            primary: $settings.amountDisplayPrimary,
-                            primarySize: 32
-                        )
-                        .accessibilityLabel("Offer amount: \(amount) sats")
+                        if quote.unit.lowercased() == "sat" {
+                            CurrencyAmountDisplay(
+                                sats: amount,
+                                primary: $settings.amountDisplayPrimary,
+                                primarySize: 32
+                            )
+                            .accessibilityLabel("Offer amount: \(amount) sats")
+                        } else {
+                            Text(formatQuoteAmount(amount, unit: quote.unit))
+                                .font(.system(size: 32, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                                .accessibilityLabel("Offer amount: \(amount) \(quote.unit)")
+                        }
                     }
 
                     statusBadge
@@ -412,7 +516,7 @@ struct ReceiveLightningView: View {
                         editableRow(
                             icon: "bitcoinsign",
                             label: "Amount",
-                            value: quote.amount.flatMap { $0 > 0 ? formatBalance($0) : nil } ?? "Any",
+                            value: quote.amount.flatMap { $0 > 0 ? formatQuoteAmount($0, unit: quote.unit) : nil } ?? "Any",
                             action: { showReusableAmountPicker = true }
                         )
                         if let created = quote.createdAt {
@@ -440,6 +544,7 @@ struct ReceiveLightningView: View {
         .sheet(isPresented: $showReusableAmountPicker) {
             CashuRequestAmountPickerSheet(
                 currentAmount: quote.amount,
+                unit: quote.unit,
                 onSelect: { setReusableOfferAmount($0) }
             )
         }
@@ -473,7 +578,7 @@ struct ReceiveLightningView: View {
             rows.append(.init(
                 icon: "bitcoinsign",
                 label: "Amount",
-                value: AmountFormatter.sats(amount, useBitcoinSymbol: settings.useBitcoinSymbol)
+                value: formatQuoteAmount(amount, unit: quote.unit)
             ))
         }
         if let mint = walletManager.activeMint {
@@ -567,7 +672,7 @@ struct ReceiveLightningView: View {
                         .font(.system(size: 32, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .accessibilityLabel("Amount received: \(amount) sats")
-                } else {
+                } else if quote.unit.lowercased() == "sat" {
                     // Smaller than the QR — the QR is the focal element on this
                     // screen; the amount confirms it.
                     CurrencyAmountDisplay(
@@ -576,6 +681,12 @@ struct ReceiveLightningView: View {
                         primarySize: 32
                     )
                     .accessibilityLabel("Request amount: \(amount) sats")
+                } else {
+                    // Non-sat mint unit: show it directly, no BTC-price flip.
+                    Text(formatQuoteAmount(amount, unit: quote.unit))
+                        .font(.system(size: 32, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .accessibilityLabel("Request amount: \(amount) \(quote.unit)")
                 }
             } else {
                 if isCreatingRequest {
@@ -813,6 +924,9 @@ struct ReceiveLightningView: View {
     }
 
     private func syncSelectedMethodWithActiveMint() {
+        // A different mint may not mint the previously-picked unit — clear the
+        // explicit choice so `effectiveUnit` falls back to the new mint's default.
+        selectedReceiveUnit = nil
         guard availableMintMethods.contains(selectedMethod) else {
             let fallback = availableMintMethods.first ?? .bolt11
             selectedMethod = fallback
@@ -950,7 +1064,8 @@ struct ReceiveLightningView: View {
 
     private func createRequest(method requestMethod: PaymentMethodKind, amountless: Bool, forceNew: Bool = false) {
         // Onchain is always amountless (sender decides). Lightning/BOLT12 require a value.
-        let requestAmount: UInt64? = (amountless || requestMethod == .onchain) ? nil : (amountSats > 0 ? amountSats : nil)
+        // Amount is in the active unit's base units (sats, or eur/usd cents, …).
+        let requestAmount: UInt64? = (amountless || requestMethod == .onchain) ? nil : (amountBaseUnits > 0 ? amountBaseUnits : nil)
 
         if !amountless, requestMethod != .onchain, (requestAmount ?? 0) == 0 {
             return
@@ -978,7 +1093,8 @@ struct ReceiveLightningView: View {
                 } else {
                     quote = try await walletManager.createMintQuote(
                         amount: requestAmount,
-                        method: requestMethod
+                        method: requestMethod,
+                        unit: effectiveUnit
                     )
                 }
                 quoteCreatedAt = Date()
@@ -1213,11 +1329,13 @@ struct ReceiveLightningView: View {
         // Fire the home-screen toast (same notification the NPC mint flow
         // posts from WalletManager) so the user sees the receipt on the home
         // screen after dismiss.
-        if let amount = mintQuote?.amount {
+        if let quote = mintQuote, let amount = quote.amount {
             NotificationCenter.default.post(
                 name: .cashuTokenReceived,
                 object: nil,
-                userInfo: ["amount": amount]
+                // Pass the unit so the home delta skips a misleading "+N sat" for
+                // a non-sat mint (the sat balance didn't move).
+                userInfo: ["amount": amount, "unit": quote.unit]
             )
         }
 

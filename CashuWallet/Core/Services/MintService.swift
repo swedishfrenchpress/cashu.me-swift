@@ -417,6 +417,7 @@ class MintService: ObservableObject {
             mintInfo.iconUrl = fetchedInfo.iconUrl ?? mintInfo.iconUrl
 
             mintInfo.units = supportedUnits(from: fetchedInfo.nuts)
+            mintInfo.mintUnits = mintableUnits(from: fetchedInfo.nuts)
 
             let mintMethods = supportedMintPaymentMethods(from: fetchedInfo.nuts.nut04.methods)
             if !mintMethods.isEmpty {
@@ -438,8 +439,9 @@ class MintService: ObservableObject {
     }
 
     private func supportedMintPaymentMethods(from methods: [Cdk.MintMethodSettings]) -> [PaymentMethodKind] {
+        // No unit filter: a mint that offers bolt11 only in a non-sat unit must
+        // still surface the Lightning mint method (the unit is chosen separately).
         let mappedMethods = methods
-            .filter { isSatUnit($0.unit) }
             .compactMap { PaymentMethodKind.from($0.method) }
         return PaymentMethodKind.allCases.filter { mappedMethods.contains($0) }
     }
@@ -454,6 +456,14 @@ class MintService: ObservableObject {
     private func supportedUnits(from nuts: Cdk.Nuts) -> [String] {
         let units = (nuts.mintUnits + nuts.meltUnits)
             .map(PaymentRequestDecoder.unitDescription)
+        let uniqueUnits = Array(Set(units)).sorted()
+        return uniqueUnits.isEmpty ? ["sat"] : uniqueUnits
+    }
+
+    /// Units the mint can MINT (NUT-04) — used to gate the Receive unit selector
+    /// so we never offer a melt-only unit for minting.
+    private func mintableUnits(from nuts: Cdk.Nuts) -> [String] {
+        let units = nuts.mintUnits.map(PaymentRequestDecoder.unitDescription)
         let uniqueUnits = Array(Set(units)).sorted()
         return uniqueUnits.isEmpty ? ["sat"] : uniqueUnits
     }

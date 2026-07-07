@@ -62,6 +62,23 @@ struct EURCurrency: Currency {
     let symbolPosition = CurrencySymbolPosition.before
 }
 
+/// Fallback for an arbitrary mint unit the registry doesn't know about (any
+/// custom unit string a mint might advertise). Treated as an integer base unit
+/// (no decimals) and displayed with the raw code as a trailing label.
+struct GenericCurrency: Currency {
+    let code: String
+    let symbol = ""
+    let decimals = 0
+    let displayName: String
+    let symbolPosition = CurrencySymbolPosition.after
+
+    init(unit: String) {
+        let normalized = unit.uppercased()
+        self.code = normalized
+        self.displayName = normalized
+    }
+}
+
 // MARK: - Currency Amount
 
 /// A value with an associated currency
@@ -131,6 +148,37 @@ struct CurrencyAmount: Equatable {
     }
 }
 
+// MARK: - Home Balance Ordering
+
+/// Ordering for the multi-unit home balance pager. Sat is always first (the
+/// wallet's base unit and identity); every other unit the user actually holds a
+/// positive balance in follows, sorted. A wallet with only sat — or no non-sat
+/// balance — yields just `["sat"]`, so the home shows its single hero unchanged.
+enum HomeBalance {
+    static func homeBalanceUnits(_ balancesByUnit: [String: UInt64]) -> [String] {
+        let nonSat = balancesByUnit
+            .filter { $0.key.lowercased() != "sat" && $0.value > 0 }
+            .keys
+            .sorted()
+        return ["sat"] + nonSat
+    }
+
+    /// Resolves a stored/last-viewed unit against the currently available units,
+    /// falling back to "sat" when that unit no longer carries a balance.
+    static func resolvedUnit(_ unit: String, in units: [String]) -> String {
+        units.contains(unit) ? unit : "sat"
+    }
+
+    /// The home hero pages (swipe/dots) only when the active/default mint is
+    /// multi-unit AND the wallet holds a non-sat balance. A single-unit default
+    /// mint keeps the single sat hero even if a non-sat balance exists at another
+    /// mint (that balance stays visible on Send + Mint Detail).
+    static func showsUnitPager(activeMintSupportsMultipleUnits: Bool,
+                               balancesByUnit: [String: UInt64]) -> Bool {
+        activeMintSupportsMultipleUnits && homeBalanceUnits(balancesByUnit).count > 1
+    }
+}
+
 // MARK: - Currency Registry
 
 /// Registry for looking up currencies by code
@@ -147,9 +195,11 @@ enum CurrencyRegistry {
         supportedCurrencies.first { $0.code.uppercased() == code.uppercased() }
     }
     
-    /// Map from mint unit string to currency
-    /// Mints may use "sat", "usd", "eur" as unit identifiers
-    static func currency(forMintUnit unit: String) -> (any Currency)? {
+    /// Map a mint unit string to a currency for entry precision + display.
+    /// Known units resolve to their built-in currency; any other (custom) unit
+    /// falls back to a `GenericCurrency` so the result is never nil and
+    /// arbitrary mint units are supported.
+    static func currency(forMintUnit unit: String) -> any Currency {
         switch unit.lowercased() {
         case "sat", "sats", "satoshi", "satoshis":
             return SatoshiCurrency()
@@ -158,7 +208,7 @@ enum CurrencyRegistry {
         case "eur", "euro", "euros":
             return EURCurrency()
         default:
-            return nil
+            return GenericCurrency(unit: unit)
         }
     }
 }

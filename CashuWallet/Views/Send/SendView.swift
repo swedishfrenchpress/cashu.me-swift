@@ -17,6 +17,17 @@ struct SendView: View {
     @State private var errorShowsMintAction = false
     @State private var showMintPicker = false
     @State private var selectedSendMint: MintInfo?
+
+    // Multi-unit send: the user's explicit unit choice for this flow (nil = use
+    // the mint's default), the picker sheet flag, and the async-loaded balance
+    // for the active non-sat unit (sat uses the cached mint balance instead).
+    @State private var selectedSendUnit: String?
+    @State private var showUnitPicker = false
+    @State private var selectedUnitBalance: UInt64?
+    // Unit + amount captured at generation time so the pending-token screen keeps
+    // showing the right denomination even if the live selection later changes.
+    @State private var generatedTokenUnit: String = "sat"
+    @State private var generatedAmount: UInt64 = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // Token claim detection
@@ -91,6 +102,22 @@ struct SendView: View {
                     }
                 }
 
+                // Unit selector — only when the active mint offers more than one
+                // unit. Declared after the lock so it sits to the lock's right.
+                if generatedToken == nil, let mint = unitContextMint, mint.supportsMultipleUnits {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            HapticFeedback.selection()
+                            showUnitPicker = true
+                        } label: {
+                            Text(effectiveSendUnit.uppercased())
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .accessibilityLabel("Unit: \(effectiveSendUnit.uppercased())")
+                        .accessibilityHint("Choose the unit for this ecash")
+                    }
+                }
+
                 if generatedToken != nil && !tokenClaimed {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: { showShareSheet = true }) {
@@ -108,6 +135,14 @@ struct SendView: View {
                 )
                     .environmentObject(walletManager)
                     .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showUnitPicker) {
+                UnitSelectorSheet(
+                    units: unitContextMint?.units ?? ["sat"],
+                    selectedUnit: effectiveSendUnit,
+                    onSelect: selectSendUnit
+                )
+                .presentationDetents([.medium])
             }
             .sheet(isPresented: $showShareSheet) {
                 if let token = generatedToken {
@@ -127,7 +162,14 @@ struct SendView: View {
                 checkingTask?.cancel()
             }
             .onChange(of: entryUnit) { oldUnit, newUnit in
+                // Only the sats↔fiat display flip re-expresses the typed string.
+                // A non-sat mint unit is entered directly and must not be
+                // reinterpreted through the sat price.
+                guard isSatSend else { return }
                 amountString = AmountFormatter.entryConverted(raw: amountString, from: oldUnit, to: newUnit)
+            }
+            .task(id: unitBalanceKey) {
+                await loadUnitBalance()
             }
         }
     }
@@ -152,12 +194,23 @@ struct SendView: View {
 
             Spacer()
 
-            // Amount display — fiat-primary with tap-to-flip ↕ pill
-            CurrencyAmountDisplay(
-                sats: amountSats,
-                primary: $settings.amountDisplayPrimary,
-                entryRaw: amountString
-            )
+            // Amount display — sats keep the fiat-primary tap-to-flip ↕ pill; a
+            // non-sat mint unit is shown directly in that unit (no price flip).
+            if isSatSend {
+                CurrencyAmountDisplay(
+                    sats: amountSats,
+                    primary: $settings.amountDisplayPrimary,
+                    entryRaw: amountString
+                )
+            } else {
+                Text(sendUnitEntryDisplay)
+                    .font(.system(size: 64, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.4)
+                    .lineLimit(1)
+                    .contentTransition(.numericText(value: Double(amountBaseUnits)))
+                    .animation(.snappy, value: amountBaseUnits)
+            }
 
             if let error = errorMessage {
                 InlineNotice(
@@ -172,9 +225,16 @@ struct SendView: View {
 
             Spacer()
 
-            // Number pad
-            NumberPadAmountInput(amountString: $amountString, unit: entryUnit)
-                .padding(.horizontal, 24)
+            // Number pad — sats/fiat display entry, or direct entry in the
+            // active mint unit's own precision (0 decimals for sat, 2 for eur/usd).
+            Group {
+                if isSatSend {
+                    NumberPadAmountInput(amountString: $amountString, unit: entryUnit)
+                } else {
+                    NumberPadAmountInput(amountString: $amountString, decimals: sendUnitDecimals)
+                }
+            }
+            .padding(.horizontal, 24)
 
             Button(action: {
                 HapticFeedback.impact(.light)
@@ -200,7 +260,7 @@ struct SendView: View {
     private func mintSelector(mint: MintInfo) -> some View {
         MintAmountSelectorRow(
             mint: mint,
-            balanceText: formatBalance(mint.balance),
+            balanceText: sendBalanceText,
             onChooseMint: { showMintPicker = true },
             onUseMax: { useMax(mint: mint) }
         )
@@ -213,21 +273,123 @@ struct SendView: View {
     }
 
     /// Satoshis represented by the typed amount, interpreted per `entryUnit`.
-    private var amountSats: UInt64 { AmountFormatter.entrySats(raw: amountString, unit: entryUnit) }
+    /// Zero outside sat mode (a non-sat amount has no sat value) — this also
+    /// keeps `displaySendMint`'s balance-minimum from filtering on a garbage
+    /// value while the keypad holds a eur/usd amount.
+    private var amountSats: UInt64 {
+        guard isSatSend else { return 0 }
+        return AmountFormatter.entrySats(raw: amountString, unit: entryUnit)
+    }
+
+    // MARK: - Active unit
+
+    /// The mint whose supported units drive the selector. Uses no sat-minimum,
+    /// so resolving the active unit never (recursively) depends on the entered
+    /// amount. Equals `displaySendMint` whenever a mint is explicitly chosen or
+    /// the unit is non-sat.
+    private var unitContextMint: MintInfo? {
+        resolvedSelectedSendMint ?? recommendedSendMint(minimumAmount: nil)
+    }
+
+    /// The unit this send is denominated in — the user's pick when the mint
+    /// supports it, otherwise a unit the wallet can actually spend. Auto-resets
+    /// when the mint changes to one lacking the selected unit.
+    private var effectiveSendUnit: String {
+        guard let mint = unitContextMint else { return "sat" }
+        if let selectedSendUnit, mint.units.contains(selectedSendUnit) {
+            return selectedSendUnit
+        }
+        return defaultSpendableUnit(for: mint)
+    }
+
+    /// The unit to default to when the user hasn't chosen one: the mint's
+    /// preferred unit while it holds a balance, otherwise the first supported
+    /// unit the wallet can spend — so a USD-only wallet lands on USD instead of
+    /// an empty sat form.
+    private func defaultSpendableUnit(for mint: MintInfo) -> String {
+        let preferred = mint.defaultUnit
+        if unitHasSpendableBalance(preferred, mint: mint) { return preferred }
+        return mint.units.first { unitHasSpendableBalance($0, mint: mint) } ?? preferred
+    }
+
+    /// Whether `unit` currently holds a spendable balance. Sat reads the cached
+    /// per-mint balance; other units use the wallet-wide per-unit totals (the
+    /// same source as the home hero) since non-sat per-mint balances load async.
+    private func unitHasSpendableBalance(_ unit: String, mint: MintInfo) -> Bool {
+        if unit.lowercased() == "sat" { return mint.balance > 0 }
+        return (walletManager.balancesByUnit[unit] ?? 0) > 0
+    }
+
+    private var isSatSend: Bool { effectiveSendUnit.lowercased() == "sat" }
+    private var sendUnitCurrency: any Currency { CurrencyRegistry.currency(forMintUnit: effectiveSendUnit) }
+    private var sendUnitDecimals: Int { sendUnitCurrency.decimals }
+
+    /// The amount actually created, in the active unit's base units (sats for
+    /// sat; cents for eur/usd; integer for a custom unit).
+    private var amountBaseUnits: UInt64 {
+        isSatSend ? amountSats : AmountFormatter.entryBaseUnits(raw: amountString, decimals: sendUnitDecimals)
+    }
+
+    /// The active unit's spendable balance: sat from the cached mint balance,
+    /// other units from the async-loaded `selectedUnitBalance`.
+    private var effectiveSendBalance: UInt64 {
+        isSatSend ? (displaySendMint?.balance ?? 0) : (selectedUnitBalance ?? 0)
+    }
+
+    /// Big-number display for a non-sat entry, formatted in the active unit.
+    private var sendUnitEntryDisplay: String {
+        CurrencyAmount(value: amountBaseUnits, currency: sendUnitCurrency).formatted()
+    }
+
+    /// The mint-row balance line, in the active unit ("…" while non-sat loads).
+    private var sendBalanceText: String {
+        if isSatSend { return formatBalance(displaySendMint?.balance ?? 0) }
+        guard let bal = selectedUnitBalance else { return "…" }
+        return CurrencyAmount(value: bal, currency: sendUnitCurrency).formatted()
+    }
+
+    /// Re-loads `selectedUnitBalance` whenever the (mint, unit) pair changes.
+    private var unitBalanceKey: String { "\(displaySendMint?.url ?? "")|\(effectiveSendUnit)" }
+
+    private func selectSendUnit(_ unit: String) {
+        selectedSendUnit = unit
+        // The typed amount's meaning changes with the unit — clear it and its
+        // now-stale balance rather than reinterpret the digits.
+        amountString = ""
+        selectedUnitBalance = nil
+        errorMessage = nil
+        HapticFeedback.selection()
+    }
+
+    private func loadUnitBalance() async {
+        guard !isSatSend, let mint = displaySendMint else {
+            selectedUnitBalance = nil
+            return
+        }
+        let unit = effectiveSendUnit
+        let balance = await walletManager.unitBalance(mintURL: mint.url, unit: unit)
+        // Ignore a result that arrived after the user moved on to another unit/mint.
+        guard effectiveSendUnit == unit, displaySendMint?.url == mint.url else { return }
+        selectedUnitBalance = balance
+    }
 
     private func useMax(mint: MintInfo) {
         HapticFeedback.impact(.light)
-        // Balance is sats; express it in the current entry unit so the keypad
-        // string keeps its meaning.
-        amountString = AmountFormatter.entryConverted(raw: String(mint.balance), from: .sats, to: entryUnit)
+        if isSatSend {
+            // Balance is sats; express it in the current entry unit so the keypad
+            // string keeps its meaning.
+            amountString = AmountFormatter.entryConverted(raw: String(mint.balance), from: .sats, to: entryUnit)
+        } else {
+            amountString = AmountFormatter.entryString(baseUnits: effectiveSendBalance, decimals: sendUnitDecimals)
+        }
     }
 
     private var canSend: Bool {
-        let amount = amountSats
+        let amount = amountBaseUnits
         guard amount > 0 else { return false }
-        guard let mint = displaySendMint else { return false }
+        guard displaySendMint != nil else { return false }
         if lockWithP2PK && normalizedP2PKPubkeyInput == nil { return false }
-        return amount <= mint.balance
+        return amount <= effectiveSendBalance
     }
 
     private var availableSendMints: [MintInfo] {
@@ -395,12 +557,21 @@ struct SendView: View {
                             }
                         }
 
-                    // Amount
-                    CurrencyAmountDisplay(
-                        sats: amountSats,
-                        primary: $settings.amountDisplayPrimary,
-                        primarySize: 32
-                    )
+                    // Amount — sats keep the fiat-flip display; a non-sat token
+                    // shows its own unit directly.
+                    if generatedIsSat {
+                        CurrencyAmountDisplay(
+                            sats: generatedAmount,
+                            primary: $settings.amountDisplayPrimary,
+                            primarySize: 32
+                        )
+                    } else {
+                        Text(CurrencyAmount(value: generatedAmount, currency: generatedUnitCurrency).formatted())
+                            .font(.system(size: 32, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .minimumScaleFactor(0.4)
+                            .lineLimit(1)
+                    }
 
                     // Status — inline badge transition, then dismiss + toast.
                     Group {
@@ -441,13 +612,17 @@ struct SendView: View {
                     // Detail rows on canvas with hairline dividers — same
                     // pattern as the Lightning Invoice screen.
                     VStack(spacing: 0) {
-                        detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: "\(tokenFee) sat")
+                        detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: generatedFeeText)
                         canvasDivider
-                        detailRow(icon: "banknote", label: "Unit", value: settings.unitLabel.uppercased())
-                        canvasDivider
-                        detailRow(icon: "banknote", label: "Fiat",
-                                  value: priceService.btcPriceUSD > 0
-                                      ? priceService.formatSatsAsFiat(amountSats) : "—")
+                        detailRow(icon: "banknote", label: "Unit", value: generatedTokenUnit.uppercased())
+                        // Fiat conversion is only meaningful for sats; a non-sat
+                        // account unit has no BTC-price equivalent.
+                        if generatedIsSat {
+                            canvasDivider
+                            detailRow(icon: "banknote", label: "Fiat",
+                                      value: priceService.btcPriceUSD > 0
+                                          ? priceService.formatSatsAsFiat(generatedAmount) : "—")
+                        }
                         if let mintURL = generatedTokenMintURL {
                             canvasDivider
                             detailRow(icon: "bitcoinsign.bank.building", label: "Mint",
@@ -488,13 +663,12 @@ struct SendView: View {
     }
 
     private var claimedSuccessRows: [PaymentStatusView.DetailRow] {
+        let amountText = generatedIsSat
+            ? AmountFormatter.sats(generatedAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
+            : CurrencyAmount(value: generatedAmount, currency: generatedUnitCurrency).formatted()
         var rows: [PaymentStatusView.DetailRow] = [
-            .init(
-                icon: "bitcoinsign",
-                label: "Amount",
-                value: AmountFormatter.sats(amountSats, useBitcoinSymbol: settings.useBitcoinSymbol)
-            ),
-            .init(icon: "arrow.up.arrow.down", label: "Fee", value: "\(tokenFee) sat"),
+            .init(icon: "bitcoinsign", label: "Amount", value: amountText),
+            .init(icon: "arrow.up.arrow.down", label: "Fee", value: generatedFeeText),
         ]
         if let mintURL = generatedTokenMintURL {
             rows.append(.init(
@@ -504,6 +678,14 @@ struct SendView: View {
             ))
         }
         return rows
+    }
+
+    // MARK: - Generated-token display helpers
+
+    private var generatedIsSat: Bool { generatedTokenUnit.lowercased() == "sat" }
+    private var generatedUnitCurrency: any Currency { CurrencyRegistry.currency(forMintUnit: generatedTokenUnit) }
+    private var generatedFeeText: String {
+        generatedIsSat ? "\(tokenFee) sat" : CurrencyAmount(value: tokenFee, currency: generatedUnitCurrency).formatted()
     }
 
     private func detailRow(icon: String, label: String, value: String) -> some View {
@@ -551,12 +733,13 @@ struct SendView: View {
     // MARK: - Actions
 
     private func generateToken() {
-        let amount = amountSats
+        let amount = amountBaseUnits
         guard amount > 0 else { return }
         guard let mint = displaySendMint else {
             presentError("No mint available.")
             return
         }
+        let unit = effectiveSendUnit
         let selectedP2PKPubkey = lockWithP2PK ? normalizedP2PKPubkeyInput : nil
         guard !lockWithP2PK || selectedP2PKPubkey != nil else {
             presentError("Choose a valid key to lock to.")
@@ -572,10 +755,13 @@ struct SendView: View {
                     amount: amount,
                     memo: memo.isEmpty ? nil : memo,
                     p2pkPubkey: selectedP2PKPubkey,
-                    mintUrl: mint.url
+                    mintUrl: mint.url,
+                    unit: unit
                 )
                 generatedToken = result.token
                 generatedTokenMintURL = mint.url
+                generatedTokenUnit = unit
+                generatedAmount = amount
                 tokenFee = result.fee
                 HapticFeedback.notification(.success)
             } catch {
@@ -1045,7 +1231,7 @@ struct UnifiedSendView: View {
     private var inputContent: some View {
         if walletManager.mints.isEmpty {
             noMintsState
-        } else if walletManager.balance == 0 {
+        } else if !walletManager.hasAnyBalance {
             noBalanceState
         } else {
             inputForm
@@ -1065,47 +1251,88 @@ struct UnifiedSendView: View {
                         .padding(.top, 10)
                 }
 
-                // Two (or three) plain action rows, generously spaced — no header,
-                // no divider.
-                VStack(alignment: .leading, spacing: 14) {
-                    actionRow(
-                        icon: "qrcode.viewfinder",
-                        title: "Scan QR Code",
-                        subtitle: "Pay or receive by scanning",
-                        showsChevron: false,
-                        action: openScanner
-                    )
-
-                    actionRow(
-                        icon: "banknote",
-                        title: "Create ecash",
-                        subtitle: "Generate a bearer token to share",
-                        showsChevron: false,
-                        action: {
-                            HapticFeedback.selection()
-                            route = .ecash
-                        }
-                    )
-
-                    if NFCNDEFReaderSession.readingAvailable {
-                        actionRow(
-                            icon: "wave.3.right.circle.fill",
-                            title: "Contactless",
-                            subtitle: "Tap to pay nearby",
-                            showsChevron: false,
-                            action: {
-                                HapticFeedback.selection()
-                                onContactless()
-                            }
-                        )
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.top, 40)
+                // A centered row of round Liquid Glass icon buttons — the primary
+                // "ways to send" (Scan · Ecash · Tap), one-word label under each.
+                sendMethodRow
+                    .padding(.horizontal)
+                    .padding(.top, 32)
             }
             .padding(.bottom, 24)
         }
         .scrollDismissesKeyboard(.interactively)
+    }
+
+    // MARK: Send-method buttons
+
+    /// The primary "ways to send" as a centered row of round Liquid Glass icon
+    /// buttons. The `HStack` is wrapped in a `GlassEffectContainer` on iOS 26 so
+    /// the adjacent circular glass surfaces sample light consistently (glass
+    /// can't sample other glass) — same technique as the home Receive/Send row.
+    private var sendMethodRow: some View {
+        let row = HStack(spacing: 28) {
+            sendMethodButton(icon: "qrcode.viewfinder", label: "Scan",
+                             a11y: "Scan QR code", action: openScanner)
+
+            sendMethodButton(icon: "banknote", label: "Ecash",
+                             a11y: "Create ecash") {
+                HapticFeedback.selection()
+                route = .ecash
+            }
+
+            if NFCNDEFReaderSession.readingAvailable {
+                sendMethodButton(icon: "wave.3.right", label: "Tap",
+                                 a11y: "Contactless, tap to pay nearby") {
+                    HapticFeedback.selection()
+                    onContactless()
+                }
+            }
+        }
+
+        return Group {
+            if #available(iOS 26, *) {
+                GlassEffectContainer(spacing: 28) { row }
+            } else {
+                row
+            }
+        }
+        .frame(maxWidth: .infinity)   // center the group on the leading-aligned canvas
+    }
+
+    /// One round glass icon button with a one-word caption on the canvas below it.
+    /// iOS 26 uses Apple's native circular glass button style (which owns its own
+    /// interactive press); iOS 18–25 falls back to a `.quaternary` circle.
+    @ViewBuilder
+    private func sendMethodButton(
+        icon: String, label: String, a11y: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 8) {
+            if #available(iOS 26, *) {
+                Button(action: action) {
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .frame(width: 60, height: 60)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+            } else {
+                Button(action: action) {
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .foregroundStyle(.primary)
+                        .frame(width: 60, height: 60)
+                        .background(.quaternary, in: Circle())
+                }
+                .buttonStyle(PressableButtonStyle())
+            }
+
+            Text(label)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(a11y)
+        .accessibilityAddTraits(.isButton)
     }
 
     private var destinationField: some View {
@@ -2286,49 +2513,7 @@ struct UnifiedSendView: View {
             .padding(.horizontal, 4)
     }
 
-    // MARK: Action row + input actions
-
-    private func actionRow(
-        icon: String,
-        title: String,
-        subtitle: String,
-        showsChevron: Bool = true,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-
-                Spacer(minLength: 8)
-
-                // The "ways to send" rows are actions (invoke a tool/mode/sheet),
-                // not navigation pushes, so they omit the disclosure chevron. The
-                // Matching / Receive-this rows keep it — they advance the pay flow.
-                if showsChevron {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
+    // MARK: Input actions
 
     private func openScanner() {
         HapticFeedback.selection()
@@ -2410,27 +2595,13 @@ struct UnifiedSendView: View {
     }
 
     private var noBalanceState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "banknote")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-
-            VStack(spacing: 6) {
-                Text("Nothing to send yet")
-                    .font(.title3.weight(.medium))
-                Text("Receive some ecash before you can send.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            Button("Receive", action: onReceive)
-                .glassButton()
-                .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
+        NativeEmptyState(
+            title: "Nothing to send yet",
+            systemImage: "arrow.down.circle",
+            description: "Receive some ecash before you can send.",
+            actionTitle: "Receive",
+            action: onReceive
+        )
     }
 
     private func addMint(_ url: String) {
@@ -3385,6 +3556,69 @@ struct MeltViewWithAddress: View {
 }
 
 // MARK: - Mint Selector Sheet (for Send/Receive flows)
+
+/// Bottom-sheet unit chooser for the Send / Create-Ecash flow. Lists the units
+/// a mint advertises; the current one is checkmarked. Mirrors `MintSelectorSheet`.
+struct UnitSelectorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let units: [String]
+    let selectedUnit: String
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List(units, id: \.self) { unit in
+                Button(action: { select(unit) }) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(unit.uppercased())
+                                .font(.body.weight(.medium))
+                            if let subtitle = unitSubtitle(unit) {
+                                Text(subtitle)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        Spacer()
+
+                        if unit == selectedUnit {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowSeparator(.hidden)
+            }
+            .listStyle(.plain)
+            .navigationTitle("Select Unit")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Close")
+                }
+            }
+        }
+    }
+
+    private func select(_ unit: String) {
+        HapticFeedback.selection()
+        onSelect(unit)
+        dismiss()
+    }
+
+    /// Full currency name (e.g. "Euro"), omitted for a custom unit whose name is
+    /// just its own code to avoid a redundant second line.
+    private func unitSubtitle(_ unit: String) -> String? {
+        let name = CurrencyRegistry.currency(forMintUnit: unit).displayName
+        return name.uppercased() == unit.uppercased() ? nil : name
+    }
+}
 
 struct MintSelectorSheet: View {
     @Environment(\.dismiss) private var dismiss

@@ -328,6 +328,7 @@ final class CashuRequestStoreTests: XCTestCase {
         store.update(
             id: "request-id",
             amount: 42,
+            unit: "eur",
             mints: ["https://mint.example.com"],
             encoded: "creqAamounted"
         )
@@ -335,6 +336,7 @@ final class CashuRequestStoreTests: XCTestCase {
         XCTAssertEqual(store.requests.count, 1)
         let updated = store.request(withId: "request-id")
         XCTAssertEqual(updated?.amount, 42)
+        XCTAssertEqual(updated?.unit, "eur")
         XCTAssertEqual(updated?.mints, ["https://mint.example.com"])
         XCTAssertEqual(updated?.encoded, "creqAamounted")
         XCTAssertEqual(updated?.receivedPayments.first?.transactionId, "tx-1")
@@ -343,5 +345,6 @@ final class CashuRequestStoreTests: XCTestCase {
         let reloaded = CashuRequestStore(userDefaults: defaults)
         XCTAssertEqual(reloaded.requests.count, 1)
         XCTAssertEqual(reloaded.request(withId: "request-id")?.encoded, "creqAamounted")
+        XCTAssertEqual(reloaded.request(withId: "request-id")?.unit, "eur")
     }
 }

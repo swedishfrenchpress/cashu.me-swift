@@ -120,14 +120,14 @@ class CashuRequestStore: ObservableObject {
     /// request — the original amountless one and any later amounted re-encoding —
     /// keeps attaching payments to this single row instead of spawning a new
     /// request (and a new thing to track) per edit.
-    func update(id: String, amount: UInt64?, mints: [String], encoded: String) {
+    func update(id: String, amount: UInt64?, unit: String, mints: [String], encoded: String) {
         guard let index = requests.firstIndex(where: { $0.id == id }) else { return }
         let old = requests[index]
         requests[index] = CashuRequest(
             id: old.id,
             encoded: encoded,
             amount: amount,
-            unit: old.unit,
+            unit: unit,
             mints: mints,
             memo: old.memo,
             createdAt: old.createdAt,

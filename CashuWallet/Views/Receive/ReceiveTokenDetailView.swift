@@ -10,6 +10,9 @@ struct ReceiveTokenDetailView: View {
 
     @State private var decodedToken: Token?
     @State private var tokenAmount: UInt64
+    /// The token's own unit ("sat", "eur", "usd", or a custom string). Drives
+    /// unit-native amount/fee formatting so a non-sat token isn't shown as sats.
+    @State private var tokenUnit: String
     @State private var receiveFee: UInt64 = 0
     @State private var mintUrl: String = ""
     @State private var errorMessage: String?
@@ -35,8 +38,30 @@ struct ReceiveTokenDetailView: View {
         // .animation(value: sats) while PayFlowScaffold's GeometryReader is still
         // resolving — sliding the hero in from the top-left. Env-dependent state
         // (mintIsKnown / tokenLockedToKnownKey / fee) still resolves in onAppear.
-        let amount = (try? Token.decode(encodedToken: tokenString).value().value) ?? 0
+        let decoded = try? Token.decode(encodedToken: tokenString)
+        let amount = decoded.flatMap { try? $0.value().value } ?? 0
         _tokenAmount = State(initialValue: amount)
+        let unit = (decoded?.unit() ?? nil).map(PaymentRequestDecoder.unitDescription) ?? "sat"
+        _tokenUnit = State(initialValue: unit)
+    }
+
+    /// Whether the token is denominated in sats (the common path — keep the
+    /// sats↔fiat hero) versus a mint account unit (eur/usd/custom).
+    private var isSatUnit: Bool { tokenUnit.lowercased() == "sat" }
+
+    private var unitCurrency: any Currency { CurrencyRegistry.currency(forMintUnit: tokenUnit) }
+
+    /// Format a base-unit amount in the token's unit: sats keep the existing
+    /// style; other units render via their `Currency` (e.g. "€5.00", "500 EUR").
+    private func formatAmount(_ base: UInt64) -> String {
+        isSatUnit
+            ? AmountFormatter.sats(base, useBitcoinSymbol: settings.useBitcoinSymbol)
+            : CurrencyAmount(value: base, currency: unitCurrency).formatted()
+    }
+
+    /// Fee formatted in the token's unit. Sats keep the terse "N sat" style.
+    private func formatFee(_ base: UInt64) -> String {
+        isSatUnit ? "\(base) sat" : CurrencyAmount(value: base, currency: unitCurrency).formatted()
     }
 
     var body: some View {
@@ -86,10 +111,19 @@ struct ReceiveTokenDetailView: View {
     /// rows are hairline-on-canvas, matching every other detail surface.
     private var confirmContent: some View {
         PayFlowScaffold {
-            CurrencyAmountDisplay(
-                sats: tokenAmount,
-                primary: $settings.amountDisplayPrimary
-            )
+            if isSatUnit {
+                CurrencyAmountDisplay(
+                    sats: tokenAmount,
+                    primary: $settings.amountDisplayPrimary
+                )
+            } else {
+                // Non-sat account unit: show it directly, no BTC-price flip.
+                Text(formatAmount(tokenAmount))
+                    .font(.system(size: 64, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.4)
+                    .lineLimit(1)
+            }
         } details: {
             VStack(spacing: 16) {
                 VStack(spacing: 0) {
@@ -104,7 +138,7 @@ struct ReceiveTokenDetailView: View {
                         .padding(.horizontal, 4)
                         .padding(.vertical, 14)
                     } else {
-                        detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: "\(receiveFee) sat")
+                        detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: formatFee(receiveFee))
                     }
                     canvasDivider
                     detailRow(icon: "bitcoinsign.bank.building", label: "Mint", value: shortMintUrl(mintUrl))
@@ -171,9 +205,9 @@ struct ReceiveTokenDetailView: View {
             .init(
                 icon: "bitcoinsign",
                 label: "Amount",
-                value: AmountFormatter.sats(tokenAmount, useBitcoinSymbol: settings.useBitcoinSymbol)
+                value: formatAmount(tokenAmount)
             ),
-            .init(icon: "arrow.up.arrow.down", label: "Fee", value: "\(receiveFee) sat"),
+            .init(icon: "arrow.up.arrow.down", label: "Fee", value: formatFee(receiveFee)),
         ]
         if !mintUrl.isEmpty {
             rows.append(.init(
@@ -320,7 +354,7 @@ struct ReceiveTokenDetailView: View {
                     NotificationCenter.default.post(
                         name: .cashuTokenReceived,
                         object: nil,
-                        userInfo: ["amount": receivedAmount, "fee": UInt64(0)]
+                        userInfo: ["amount": receivedAmount, "fee": UInt64(0), "unit": tokenUnit]
                     )
                     withAnimation(.smooth(duration: 0.3)) { phase = .success }
                 }

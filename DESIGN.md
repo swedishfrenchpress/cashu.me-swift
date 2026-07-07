@@ -499,6 +499,17 @@ right tool for the job.
   Typography and padding match `FullWidthCapsuleButtonStyle` exactly
   (`.body.weight(.semibold)`, `.padding(.vertical, 18)`) so it reads as one
   family.
+- **Send-method row (carve-out) — round glass icon buttons.** The Send chooser
+  (`UnifiedSendView`) offers its "ways to send" — Scan · Ecash · Tap — as a
+  centered row of **circular** Liquid Glass icon buttons, each a monochrome SF
+  Symbol over a one-word `.caption.weight(.medium)` label on the canvas. On
+  iOS 26 each circle uses Apple's native `.buttonStyle(.glass)` +
+  `.buttonBorderShape(.circle)` inside a `GlassEffectContainer`; iOS 18–25 falls
+  back to a `.quaternary` circle with `PressableButtonStyle`. This is a
+  deliberate, bounded expansion of the surface vocabulary beyond the full-width
+  capsule — justified because here the SF Symbol *is* the affordance (icon-only,
+  no text on the surface) and it echoes the circular glass button the home row
+  itself once carried (see Capsule + Circle + Capsule, above).
 - **Press feedback — `PressableButtonStyle`**: 0.97 scale on press down
   (`.snappy(0.09)`), spring back on release (`.snappy(0.18)`). Apply only
   where the glass style doesn't already carry feedback (the chooser
@@ -797,6 +808,28 @@ fixed top section (BTC chip, balance, fiat line, Receive/Send) is pinned via
 `.safeAreaInset(edge: .top)` while the recent-activity list scrolls beneath
 it, with a `LinearGradient` opacity mask fading rows to clear before they
 reach the buttons. See `MainWalletView.swift` for the current implementation.
+
+*Carve-out (Multi-unit balance pager, 2026-07-06).* When the wallet holds a
+balance in more than one **unit** (sat + eur/usd/custom — mints can advertise
+multiple units, NUT-04/05), the balance hero becomes a horizontal **pager**:
+one unit's balance per page, swipeable, with system page dots
+(`TabView`/`.tabViewStyle(.page)` in `MainWalletView.unitBalanceHero`). This is a
+**deliberate, user-chosen** re-introduction of a horizontal swiper on the home
+balance — surfaced against this retired-mint-card precedent with two flat
+alternatives (a unit-chip menu, a supplementary sub-line) before the swipe idiom
+was picked. It does **not** revive the mint-card switcher: it browses *units of
+the same wallet*, not accounts; there is exactly **one hero number visible at a
+time** (the Only-Hero-Number rule holds — no stat panel, no card stack); the
+canvas underneath stays bare; and the pager appears **only** when the **active
+(default) mint** advertises multiple units **and** a non-sat balance is held
+(`HomeBalance.showsUnitPager`, 2026-07-06 refinement). A sat-only default mint
+renders the single hero verbatim — no pager, no dots — even if a non-sat balance
+is held at another mint (that balance still shows on Send + Mint Detail); switching
+the default mint chip re-evaluates the gate live. Each page keeps the Tabular
+Figure Rule (`.monospacedDigit()` +
+`.contentTransition(.numericText())`); the sat page keeps its ₿/sat tap-toggle
+and fiat sub-line, non-sat pages show the amount in its own currency (no fiat
+conversion — eur is already fiat).
 
 **The Share-At-Top Rule.** Any sheet that displays a shareable QR artifact —
 Lightning Invoice (`ReceiveLightningView`), Cashu Request

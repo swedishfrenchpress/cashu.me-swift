@@ -7,12 +7,14 @@ extension WalletManager {
     func createMintQuote(
         amount: UInt64?,
         method: PaymentMethodKind = .bolt11,
-        targetMintURL: String? = nil
+        targetMintURL: String? = nil,
+        unit: String = "sat"
     ) async throws -> MintQuoteInfo {
         let quote = try await lightningService.createMintQuote(
             amount: amount,
             method: method,
-            targetMintURL: targetMintURL
+            targetMintURL: targetMintURL,
+            unit: PaymentRequestDecoder.currencyUnit(from: unit)
         )
         await loadTransactions()
         return quote
