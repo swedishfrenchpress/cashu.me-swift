@@ -25,7 +25,7 @@ import org.cashu.wallet.ui.receive.ReceiveEcashScreen
 import org.cashu.wallet.ui.receive.ReceiveLightningScreen
 import org.cashu.wallet.ui.send.SendEcashScreen
 import org.cashu.wallet.ui.send.UnifiedSendScreen
-import org.cashu.wallet.ui.settings.AppearanceScreen
+import org.cashu.wallet.ui.settings.BackupRestoreScreen
 import org.cashu.wallet.ui.settings.BackupScreen
 import org.cashu.wallet.ui.settings.LightningScreen
 import org.cashu.wallet.ui.settings.NostrScreen
@@ -152,6 +152,13 @@ fun CashuNavHost(
         }
 
         // Settings sub-screens
+        composable(Routes.SETTINGS_BACKUP_RESTORE) {
+            BackupRestoreScreen(
+                walletManager = container.walletManager,
+                onOpenBackup = { navController.navigate(Routes.SETTINGS_BACKUP) },
+                onClose = { navController.popBackStack() },
+            )
+        }
         composable(Routes.SETTINGS_BACKUP) {
             BackupScreen(
                 walletManager = container.walletManager,
@@ -180,13 +187,6 @@ fun CashuNavHost(
         }
         composable(Routes.SETTINGS_PRIVACY) {
             PrivacyScreen(
-                settingsManager = container.settingsManager,
-                priceService = container.priceService,
-                onClose = { navController.popBackStack() },
-            )
-        }
-        composable(Routes.SETTINGS_APPEARANCE) {
-            AppearanceScreen(
                 settingsManager = container.settingsManager,
                 onClose = { navController.popBackStack() },
             )
@@ -276,12 +276,13 @@ private fun NavGraphBuilder.tabDestinations(
     composable(Routes.SETTINGS) {
         SettingsScreen(
             walletManager = container.walletManager,
-            onOpenBackup = { navController.navigate(Routes.SETTINGS_BACKUP) },
+            settingsManager = container.settingsManager,
+            priceService = container.priceService,
+            onOpenBackupRestore = { navController.navigate(Routes.SETTINGS_BACKUP_RESTORE) },
             onOpenLightning = { navController.navigate(Routes.SETTINGS_LIGHTNING) },
-            onOpenP2PK = { navController.navigate(Routes.SETTINGS_P2PK) },
+            onOpenLockedEcash = { navController.navigate(Routes.SETTINGS_P2PK) },
             onOpenNostr = { navController.navigate(Routes.SETTINGS_NOSTR) },
             onOpenPrivacy = { navController.navigate(Routes.SETTINGS_PRIVACY) },
-            onOpenAppearance = { navController.navigate(Routes.SETTINGS_APPEARANCE) },
             contentPadding = contentPadding,
         )
     }

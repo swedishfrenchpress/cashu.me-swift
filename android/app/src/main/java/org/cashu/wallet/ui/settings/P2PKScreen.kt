@@ -63,7 +63,7 @@ fun P2PKScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("P2PK", style = MaterialTheme.typography.titleMedium) },
+                title = { Text("Locked Ecash", style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")

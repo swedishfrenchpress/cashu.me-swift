@@ -28,12 +28,12 @@ object Routes {
     const val RECEIVE_TOKEN_DETAIL = "receive/token-detail"
 
     // Settings sub-screens
+    const val SETTINGS_BACKUP_RESTORE = "settings/backup-restore"
     const val SETTINGS_BACKUP = "settings/backup"
     const val SETTINGS_LIGHTNING = "settings/lightning"
     const val SETTINGS_P2PK = "settings/p2pk"
     const val SETTINGS_NOSTR = "settings/nostr"
     const val SETTINGS_PRIVACY = "settings/privacy"
-    const val SETTINGS_APPEARANCE = "settings/appearance"
 
     /** Top tabs in display order. */
     val TopTabs: List<TopTab> = listOf(
