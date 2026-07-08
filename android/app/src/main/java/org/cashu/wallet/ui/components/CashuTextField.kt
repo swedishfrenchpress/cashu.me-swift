@@ -13,10 +13,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.VisualTransformation
 
-// The Singular TextField: a filled M3 TextField with consistent container, indicator,
-// and shape (TextFieldDefaults.shape = MaterialTheme.shapes.extraSmall with squared
-// bottom corners, per the M3 spec). Every app input flows through this so we never
-// fall back to the dated outlined+filled hybrid.
+// The Singular TextField: a filled M3 TextField restyled onto the app's rounded
+// shape language — large-radius container on all corners with the underline
+// indicator removed (the stock M3 filled field squares the bottom corners
+// around an indicator line, which reads foreign next to the app's capsule
+// buttons and rounded menus; iOS uses rounded material containers with no
+// indicator). Focus still reads through the cursor, label, and container
+// tokens; errors read through the error label/supporting text. Every app input
+// flows through this so the treatment stays uniform.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CashuTextField(
@@ -58,16 +62,16 @@ fun CashuTextField(
         singleLine = singleLine,
         minLines = minLines,
         maxLines = maxLines,
-        shape = TextFieldDefaults.shape,
+        shape = MaterialTheme.shapes.large,
         colors = TextFieldDefaults.colors(
             focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
             disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             errorContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-            unfocusedIndicatorColor = MaterialTheme.colorScheme.outlineVariant,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
             disabledIndicatorColor = Color.Transparent,
-            errorIndicatorColor = MaterialTheme.colorScheme.error,
+            errorIndicatorColor = Color.Transparent,
             cursorColor = MaterialTheme.colorScheme.primary,
             focusedLabelColor = MaterialTheme.colorScheme.primary,
             unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
