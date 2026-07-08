@@ -302,9 +302,13 @@ fun SendEcashScreen(
                     p2pkInput = p2pkInput,
                     onP2pkInputChange = { p2pkInput = it },
                     p2pkInputError = p2pkInputError,
-                    p2pkLatestKeyHex = settings.p2pkKeys.firstOrNull()?.publicKey,
-                    onUseLatestP2pkKey = {
-                        settings.p2pkKeys.firstOrNull()?.let { p2pkInput = it.publicKey }
+                    // iOS "Lock to my key" shortcut: opt-in via the Locked Ecash
+                    // toggle, and it targets the seed-derived primary key.
+                    p2pkMyKeyHex = if (settings.showP2PKButtonInDrawer) {
+                        settingsManager.primaryP2PKKeyInfo()?.publicKey
+                    } else null,
+                    onUseMyP2pkKey = {
+                        settingsManager.primaryP2PKKeyInfo()?.let { p2pkInput = it.publicKey }
                     },
                     canSendWithP2pk = !p2pkOn || validatedP2pkPubkey != null,
                     onSend = {
@@ -430,8 +434,8 @@ private fun InputFace(
     p2pkInput: String,
     onP2pkInputChange: (String) -> Unit,
     p2pkInputError: String?,
-    p2pkLatestKeyHex: String?,
-    onUseLatestP2pkKey: () -> Unit,
+    p2pkMyKeyHex: String?,
+    onUseMyP2pkKey: () -> Unit,
     canSendWithP2pk: Boolean,
     onSend: () -> Unit,
 ) {
@@ -492,8 +496,8 @@ private fun InputFace(
                 input = p2pkInput,
                 onInputChange = onP2pkInputChange,
                 inputError = p2pkInputError,
-                latestKeyHex = p2pkLatestKeyHex,
-                onUseLatestKey = onUseLatestP2pkKey,
+                myKeyHex = p2pkMyKeyHex,
+                onUseMyKey = onUseMyP2pkKey,
             )
         }
 
@@ -522,8 +526,8 @@ private fun P2pkLockSection(
     input: String,
     onInputChange: (String) -> Unit,
     inputError: String?,
-    latestKeyHex: String?,
-    onUseLatestKey: () -> Unit,
+    myKeyHex: String?,
+    onUseMyKey: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -551,10 +555,10 @@ private fun P2pkLockSection(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (latestKeyHex != null) {
+        if (myKeyHex != null) {
             org.cashu.wallet.ui.components.GhostButton(
-                text = "Use my latest key",
-                onClick = onUseLatestKey,
+                text = "Lock to my key",
+                onClick = onUseMyKey,
             )
         }
     }

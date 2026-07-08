@@ -216,8 +216,14 @@ No other Android-only user-facing surfaces were found.
 5. **Restore-over-units hardening** — `restoreMint` restores the sat wallet only
    (same as iOS today). Loop restore across `mint.units` so non-sat proofs are
    seed-recoverable. Do on both platforms together.
-6. **Locked-receive (NUT-18 P2PK-locked request) parity check** — iOS
-   `LockedReceiveRequest.build()`; confirm Android's locked-receive path matches.
+6. **Locked-receive (NUT-18 P2PK-locked request)** — DONE (2026-07-08): the full
+   iOS Locked Ecash hub is ported (`P2PKScreen` hub + `AdvancedKeysScreen` +
+   `DeviceKeyDetailScreen` + `KeyCard`/reveal/QR/explainer sheets), including
+   `LockedReceiveRequest` (NUT-18 `nut10` lock in `PaymentRequestBuilder`) and
+   the seed-derived primary P2PK key. One deliberate gap: iOS gates nsec
+   reveal/copy behind App Lock auth — Android follows when item 1 lands.
+   Note: the Nostr/P2PK seed is `sha256(mnemonic utf8)` on both platforms
+   (Android previously used 16-byte BIP39 entropy, which always failed).
 7. **Sentry opt-in parity** — landed on Android (#82); keep copy in sync with iOS
    privacy settings when that section is re-synced.
 8. **Home received-delta beat** — iOS rolls the hero balance and shows a

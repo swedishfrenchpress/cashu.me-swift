@@ -25,8 +25,10 @@ import org.cashu.wallet.ui.receive.ReceiveEcashScreen
 import org.cashu.wallet.ui.receive.ReceiveLightningScreen
 import org.cashu.wallet.ui.send.SendEcashScreen
 import org.cashu.wallet.ui.send.UnifiedSendScreen
+import org.cashu.wallet.ui.settings.AdvancedKeysScreen
 import org.cashu.wallet.ui.settings.BackupRestoreScreen
 import org.cashu.wallet.ui.settings.BackupScreen
+import org.cashu.wallet.ui.settings.DeviceKeyDetailScreen
 import org.cashu.wallet.ui.settings.LightningScreen
 import org.cashu.wallet.ui.settings.NostrScreen
 import org.cashu.wallet.ui.settings.P2PKScreen
@@ -183,6 +185,34 @@ fun CashuNavHost(
         composable(Routes.SETTINGS_P2PK) {
             P2PKScreen(
                 settingsManager = container.settingsManager,
+                nostrService = container.nostrService,
+                onOpenAdvancedKeys = { navController.navigate(Routes.SETTINGS_P2PK_ADVANCED) },
+                onClose = { navController.popBackStack() },
+            )
+        }
+        composable(Routes.SETTINGS_P2PK_ADVANCED) {
+            AdvancedKeysScreen(
+                settingsManager = container.settingsManager,
+                onOpenKey = { keyId ->
+                    navController.navigate(
+                        Routes.SETTINGS_P2PK_KEY.replace(
+                            "{keyId}",
+                            URLEncoder.encode(keyId, StandardCharsets.UTF_8.name()),
+                        ),
+                    )
+                },
+                onClose = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = Routes.SETTINGS_P2PK_KEY,
+            arguments = listOf(navArgument("keyId") { type = NavType.StringType }),
+        ) { entry ->
+            val encoded = entry.arguments?.getString("keyId").orEmpty()
+            val keyId = URLDecoder.decode(encoded, StandardCharsets.UTF_8.name())
+            DeviceKeyDetailScreen(
+                settingsManager = container.settingsManager,
+                keyId = keyId,
                 onClose = { navController.popBackStack() },
             )
         }

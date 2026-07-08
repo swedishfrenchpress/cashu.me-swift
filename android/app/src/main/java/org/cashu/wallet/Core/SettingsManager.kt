@@ -139,6 +139,20 @@ class SettingsManager(
 
     private fun primaryP2PKKey(): PrimaryP2PKKey? = primaryP2PKKeyProvider?.invoke()
 
+    /** The seed-derived primary P2PK key, if the wallet seed is loaded (iOS primaryP2PKPublicKey). */
+    fun primaryP2PKKeyInfo(): PrimaryP2PKKey? = primaryP2PKKey()
+
+    /** Stored private key hex for a device key — used only for nsec backup/reveal. */
+    fun p2pkPrivateKeyHex(id: String): String? =
+        secureStorage.loadString(secureP2PKPrivateKey(id))
+
+    /** Rename a device key (iOS setP2PKKeyNickname). */
+    fun setP2PKKeyNickname(id: String, label: String) = update {
+        settingsStore.p2pkKeys = settingsStore.p2pkKeys.map {
+            if (it.id == id) it.copy(label = label.trim()) else it
+        }
+    }
+
     fun setUseBitcoinSymbol(value: Boolean) = update { settingsStore.useBitcoinSymbol = value }
     fun setShowFiatBalance(value: Boolean) = update {
         settingsStore.showFiatBalance = value

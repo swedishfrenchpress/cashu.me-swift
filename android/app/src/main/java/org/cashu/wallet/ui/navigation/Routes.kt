@@ -32,6 +32,8 @@ object Routes {
     const val SETTINGS_BACKUP = "settings/backup"
     const val SETTINGS_LIGHTNING = "settings/lightning"
     const val SETTINGS_P2PK = "settings/p2pk"
+    const val SETTINGS_P2PK_ADVANCED = "settings/p2pk/advanced"
+    const val SETTINGS_P2PK_KEY = "settings/p2pk/key/{keyId}"
     const val SETTINGS_NOSTR = "settings/nostr"
     const val SETTINGS_PRIVACY = "settings/privacy"
 
