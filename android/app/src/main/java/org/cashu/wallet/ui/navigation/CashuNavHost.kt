@@ -1,8 +1,21 @@
 package org.cashu.wallet.ui.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntOffset
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -21,12 +34,10 @@ import org.cashu.wallet.ui.home.ReceiveAction
 import org.cashu.wallet.ui.mints.MintDetailScreen
 import org.cashu.wallet.ui.mints.MintsScreen
 import org.cashu.wallet.ui.receive.CashuRequestDetailScreen
-import org.cashu.wallet.ui.receive.ReceiveEcashScreen
-import org.cashu.wallet.ui.receive.ReceiveLightningScreen
-import org.cashu.wallet.ui.send.SendEcashScreen
-import org.cashu.wallet.ui.send.UnifiedSendScreen
+import org.cashu.wallet.ui.settings.AdvancedKeysScreen
 import org.cashu.wallet.ui.settings.BackupRestoreScreen
 import org.cashu.wallet.ui.settings.BackupScreen
+import org.cashu.wallet.ui.settings.DeviceKeyDetailScreen
 import org.cashu.wallet.ui.settings.LightningScreen
 import org.cashu.wallet.ui.settings.NostrScreen
 import org.cashu.wallet.ui.settings.P2PKScreen
@@ -34,10 +45,10 @@ import org.cashu.wallet.ui.settings.PrivacyScreen
 import org.cashu.wallet.ui.settings.SettingsScreen
 
 /**
- * The NavHost. For PR #1, top-level destinations call legacy Views composables;
- * later PRs replace each destination with a freshly-built screen under ui.home, ui.history, etc.
- *
- * Send/Receive/Scanner/Contactless are pushed destinations (or shell overlays), not tabs.
+ * The NavHost. Tabs + pushed detail destinations only — the money flows
+ * (Send, Send Ecash, Receive Ecash, Receive Lightning) are native modal
+ * bottom sheets hosted by the shell (see `ui.shell.WalletFlowSheetHost`),
+ * and Scanner/Contactless are shell overlays.
  */
 @Composable
 fun CashuNavHost(
@@ -46,20 +57,23 @@ fun CashuNavHost(
     connectivityState: ConnectivityState,
     contentPadding: PaddingValues,
     onScan: () -> Unit,
-    onContactless: () -> Unit,
-    onOpenReceiveToken: (String) -> Unit,
-    pendingReceiveScan: String?,
-    onPendingReceiveScanConsumed: () -> Unit,
-    pendingSendScan: String?,
-    onPendingSendScanConsumed: () -> Unit,
+    onReceiveEcash: () -> Unit,
+    onReceiveLightning: () -> Unit,
+    onSend: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
+    onClaimReceiveToken: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
         navController = navController,
         startDestination = Routes.HOME,
         modifier = modifier,
+        // Shared-axis X for pushed destinations, spring-driven (M3 Expressive).
+        enterTransition = pushEnter,
+        exitTransition = pushExit,
+        popEnterTransition = popEnter,
+        popExitTransition = popExit,
     ) {
         tabDestinations(
             navController = navController,
@@ -67,58 +81,12 @@ fun CashuNavHost(
             connectivityState = connectivityState,
             contentPadding = contentPadding,
             onScan = onScan,
-            onContactless = onContactless,
+            onReceiveEcash = onReceiveEcash,
+            onReceiveLightning = onReceiveLightning,
+            onSend = onSend,
             pendingMintScan = pendingMintScan,
             onPendingMintScanConsumed = onPendingMintScanConsumed,
         )
-        composable(Routes.RECEIVE_ECASH) {
-            ReceiveEcashScreen(
-                walletManager = container.walletManager,
-                settingsManager = container.settingsManager,
-                nostrService = container.nostrService,
-                cashuRequestStore = container.cashuRequestStore,
-                onOpenRequest = { id ->
-                    navController.navigate(cashuRequestDetailRouteFor(id)) {
-                        popUpTo(Routes.RECEIVE_ECASH) { inclusive = true }
-                    }
-                },
-                onClose = { navController.popBackStack() },
-                onScan = onScan,
-                prefilledPayload = pendingReceiveScan,
-                onPrefilledConsumed = onPendingReceiveScanConsumed,
-            )
-        }
-        composable(Routes.RECEIVE_LIGHTNING) {
-            ReceiveLightningScreen(
-                walletManager = container.walletManager,
-                settingsManager = container.settingsManager,
-                onClose = { navController.popBackStack() },
-            )
-        }
-        composable(Routes.SEND_ECASH) {
-            SendEcashScreen(
-                walletManager = container.walletManager,
-                settingsManager = container.settingsManager,
-                priceService = container.priceService,
-                onClose = { navController.popBackStack() },
-            )
-        }
-        // The Send surface (iOS UnifiedSendView): destination field + ways-to-send.
-        composable(Routes.SEND) {
-            UnifiedSendScreen(
-                walletManager = container.walletManager,
-                settingsManager = container.settingsManager,
-                onClose = { navController.popBackStack() },
-                onScan = onScan,
-                onContactless = onContactless,
-                onSendEcash = { navController.navigate(Routes.SEND_ECASH) },
-                onOpenReceiveToken = onOpenReceiveToken,
-                onOpenMints = { navController.navigateToTab(TopTab.Mints) },
-                onReceive = { navController.navigate(Routes.RECEIVE_ECASH) },
-                prefilledPayload = pendingSendScan,
-                onPrefilledConsumed = onPendingSendScanConsumed,
-            )
-        }
         composable(
             route = Routes.MINT_DETAIL,
             arguments = listOf(navArgument("mintUrl") { type = NavType.StringType }),
@@ -142,6 +110,7 @@ fun CashuNavHost(
                 settingsManager = container.settingsManager,
                 transactionId = txId,
                 onClose = { navController.popBackStack() },
+                onClaimReceiveToken = onClaimReceiveToken,
             )
         }
         composable(
@@ -183,6 +152,34 @@ fun CashuNavHost(
         composable(Routes.SETTINGS_P2PK) {
             P2PKScreen(
                 settingsManager = container.settingsManager,
+                nostrService = container.nostrService,
+                onOpenAdvancedKeys = { navController.navigate(Routes.SETTINGS_P2PK_ADVANCED) },
+                onClose = { navController.popBackStack() },
+            )
+        }
+        composable(Routes.SETTINGS_P2PK_ADVANCED) {
+            AdvancedKeysScreen(
+                settingsManager = container.settingsManager,
+                onOpenKey = { keyId ->
+                    navController.navigate(
+                        Routes.SETTINGS_P2PK_KEY.replace(
+                            "{keyId}",
+                            URLEncoder.encode(keyId, StandardCharsets.UTF_8.name()),
+                        ),
+                    )
+                },
+                onClose = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = Routes.SETTINGS_P2PK_KEY,
+            arguments = listOf(navArgument("keyId") { type = NavType.StringType }),
+        ) { entry ->
+            val encoded = entry.arguments?.getString("keyId").orEmpty()
+            val keyId = URLDecoder.decode(encoded, StandardCharsets.UTF_8.name())
+            DeviceKeyDetailScreen(
+                settingsManager = container.settingsManager,
+                keyId = keyId,
                 onClose = { navController.popBackStack() },
             )
         }
@@ -223,11 +220,19 @@ private fun NavGraphBuilder.tabDestinations(
     connectivityState: ConnectivityState,
     contentPadding: PaddingValues,
     onScan: () -> Unit,
-    onContactless: () -> Unit,
+    onReceiveEcash: () -> Unit,
+    onReceiveLightning: () -> Unit,
+    onSend: () -> Unit,
     pendingMintScan: String?,
     onPendingMintScanConsumed: () -> Unit,
 ) {
-    composable(Routes.HOME) {
+    composable(
+        route = Routes.HOME,
+        enterTransition = tabEnter,
+        exitTransition = tabExit,
+        popEnterTransition = tabEnter,
+        popExitTransition = tabExit,
+    ) {
         HomeScreen(
             walletManager = container.walletManager,
             settingsManager = container.settingsManager,
@@ -242,19 +247,24 @@ private fun NavGraphBuilder.tabDestinations(
                 navController.navigate(cashuRequestDetailRouteFor(req.id))
             },
             onReceive = { action ->
-                val route = when (action) {
-                    ReceiveAction.Ecash -> Routes.RECEIVE_ECASH
-                    ReceiveAction.Bitcoin -> Routes.RECEIVE_LIGHTNING
+                when (action) {
+                    ReceiveAction.Ecash -> onReceiveEcash()
+                    ReceiveAction.Bitcoin -> onReceiveLightning()
                 }
-                navController.navigate(route)
             },
             // Send goes straight to the unified surface — no chooser (iOS parity).
-            onSend = { navController.navigate(Routes.SEND) },
+            onSend = onSend,
             onScan = onScan,
             contentPadding = contentPadding,
         )
     }
-    composable(Routes.HISTORY) {
+    composable(
+        route = Routes.HISTORY,
+        enterTransition = tabEnter,
+        exitTransition = tabExit,
+        popEnterTransition = tabEnter,
+        popExitTransition = tabExit,
+    ) {
         HistoryScreen(
             walletManager = container.walletManager,
             settingsManager = container.settingsManager,
@@ -269,7 +279,13 @@ private fun NavGraphBuilder.tabDestinations(
             contentPadding = contentPadding,
         )
     }
-    composable(Routes.MINTS) {
+    composable(
+        route = Routes.MINTS,
+        enterTransition = tabEnter,
+        exitTransition = tabExit,
+        popEnterTransition = tabEnter,
+        popExitTransition = tabExit,
+    ) {
         MintsScreen(
             walletManager = container.walletManager,
             settingsManager = container.settingsManager,
@@ -281,7 +297,13 @@ private fun NavGraphBuilder.tabDestinations(
             onScannedMintUrlConsumed = onPendingMintScanConsumed,
         )
     }
-    composable(Routes.SETTINGS) {
+    composable(
+        route = Routes.SETTINGS,
+        enterTransition = tabEnter,
+        exitTransition = tabExit,
+        popEnterTransition = tabEnter,
+        popExitTransition = tabExit,
+    ) {
         SettingsScreen(
             walletManager = container.walletManager,
             settingsManager = container.settingsManager,
@@ -305,4 +327,35 @@ fun NavHostController.navigateToTab(tab: TopTab) {
         launchSingleTop = true
         restoreState = true
     }
+}
+
+// ---------------------------------------------------------------------------
+// Motion: shared-axis X (push/pop) + fade-through (tab switches), all springs.
+// ---------------------------------------------------------------------------
+
+private val slideSpring = spring(
+    stiffness = Spring.StiffnessMediumLow,
+    visibilityThreshold = IntOffset.VisibilityThreshold,
+)
+private val fadeSpring = spring<Float>(stiffness = Spring.StiffnessMedium)
+
+private val pushEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    slideInHorizontally(slideSpring) { it / 4 } + fadeIn(fadeSpring)
+}
+private val pushExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    slideOutHorizontally(slideSpring) { -it / 4 } + fadeOut(fadeSpring)
+}
+private val popEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    slideInHorizontally(slideSpring) { -it / 4 } + fadeIn(fadeSpring)
+}
+private val popExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    slideOutHorizontally(slideSpring) { it / 4 } + fadeOut(fadeSpring)
+}
+
+/** M3 fade-through between sibling tabs (fade + 98% scale settle, no slide). */
+internal val tabEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    fadeIn(fadeSpring) + scaleIn(initialScale = 0.98f, animationSpec = fadeSpring)
+}
+internal val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    fadeOut(fadeSpring)
 }

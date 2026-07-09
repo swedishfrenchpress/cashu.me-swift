@@ -7,20 +7,30 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
@@ -29,7 +39,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -48,6 +59,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
@@ -67,13 +79,15 @@ import org.cashu.wallet.ui.components.CashuRequestRow
 import org.cashu.wallet.ui.components.requestRowAmount
 import org.cashu.wallet.ui.components.CashuSearchBar
 import org.cashu.wallet.ui.components.EmptyState
+import org.cashu.wallet.ui.components.IconSwap
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
 import org.cashu.wallet.ui.components.formatRelativeTimestamp
 import org.cashu.wallet.ui.theme.CashuTheme
+import org.cashu.wallet.ui.theme.rememberReducedMotion
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HistoryScreen(
     walletManager: WalletManager,
@@ -123,9 +137,12 @@ fun HistoryScreen(
     Scaffold(
         modifier = Modifier
             .padding(contentPadding)
+            // The shell scaffold's padding already carries the status-bar inset;
+            // consume it so the nested TopAppBar doesn't apply it a second time.
+            .consumeWindowInsets(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            CenterAlignedTopAppBar(
+            LargeFlexibleTopAppBar(
                 title = { Text("History") },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -138,8 +155,9 @@ fun HistoryScreen(
                     }
                     Box {
                         IconButton(onClick = { filterMenuOpen = true }) {
-                            Icon(
-                                imageVector = if (filter == HistoryFilter.All)
+                            // Outlined ↔ filled glyph swap animates (symbol-replace parity).
+                            IconSwap(
+                                icon = if (filter == HistoryFilter.All)
                                     Icons.Outlined.FilterList else Icons.Filled.FilterList,
                                 contentDescription = "Filter",
                             )
@@ -147,6 +165,7 @@ fun HistoryScreen(
                         DropdownMenu(
                             expanded = filterMenuOpen,
                             onDismissRequest = { filterMenuOpen = false },
+                            shape = MaterialTheme.shapes.large,
                         ) {
                             HistoryFilter.entries.forEach { entry ->
                                 DropdownMenuItem(
@@ -187,66 +206,92 @@ fun HistoryScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            if (sections.isEmpty()) {
-                HistoryEmptyState(filter = filter, hasQuery = query.isNotBlank())
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    if (searching) {
-                        item("search") {
-                            CashuSearchBar(
-                                value = query,
-                                onValueChange = { query = it },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        horizontal = CashuTheme.spacing.comfortable,
-                                        vertical = CashuTheme.spacing.snug,
-                                    ),
-                                placeholder = "Search history",
-                            )
+            // The search field lives outside the list so it survives an
+            // empty result set (searching to zero matches must not unmount
+            // the field mid-typing) — iOS .searchable parity.
+            Column(modifier = Modifier.fillMaxSize()) {
+                AnimatedVisibility(
+                    visible = searching,
+                    enter = expandVertically(spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntSize.VisibilityThreshold)) + fadeIn(),
+                    exit = shrinkVertically(spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntSize.VisibilityThreshold)) + fadeOut(),
+                ) {
+                    CashuSearchBar(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = CashuTheme.spacing.comfortable,
+                                vertical = CashuTheme.spacing.snug,
+                            ),
+                        placeholder = "Search history",
+                    )
+                }
+                if (sections.isEmpty()) {
+                    HistoryEmptyState(
+                        filter = filter,
+                        hasQuery = query.isNotBlank(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
+                } else {
+                    val listState = rememberLazyListState()
+                    // Filter switches snap the list back to the top with motion
+                    // (iOS: withAnimation(.snappy) { proxy.scrollTo(first, .top) }).
+                    LaunchedEffect(filter) {
+                        if (listState.firstVisibleItemIndex > 0 ||
+                            listState.firstVisibleItemScrollOffset > 0
+                        ) {
+                            listState.animateScrollToItem(0)
                         }
                     }
-                    sections.forEach { section ->
-                        item(key = "header-${section.title}") {
-                            SectionHeader(section.title.uppercase())
-                        }
-                        items(section.items, key = { it.key }) { item ->
-                            when (item) {
-                                is HistoryItem.Tx -> {
-                                    val tx = item.transaction
-                                    TransactionRow(
-                                        model = TransactionRowModel(
-                                            transaction = tx,
-                                            title = TransactionDisplay.title(tx),
-                                            timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
-                                            primaryAmount = formatter.formatWalletSats(
-                                                tx.amount, settings.useBitcoinSymbol,
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                        sections.forEach { section ->
+                            item(key = "header-${section.title}") {
+                                SectionHeader(section.title.uppercase())
+                            }
+                            items(section.items, key = { it.key }) { item ->
+                                // Spring-animated placement on filter/search changes.
+                                Column(modifier = Modifier.animateItem()) {
+                                when (item) {
+                                    is HistoryItem.Tx -> {
+                                        val tx = item.transaction
+                                        TransactionRow(
+                                            model = TransactionRowModel(
+                                                transaction = tx,
+                                                title = TransactionDisplay.title(tx),
+                                                timestamp = formatRelativeTimestamp(tx.dateEpochMillis),
+                                                primaryAmount = formatter.formatWalletSats(
+                                                    tx.amount, settings.useBitcoinSymbol,
+                                                ),
+                                                secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
+                                                    formatter.formatFiat(
+                                                        tx.amount,
+                                                        priceState.btcPrice,
+                                                        settings.bitcoinPriceCurrency,
+                                                    )
+                                                else null,
                                             ),
-                                            secondaryAmount = if (settings.showFiatBalance && priceState.btcPrice > 0)
-                                                formatter.formatFiat(
-                                                    tx.amount,
-                                                    priceState.btcPrice,
-                                                    settings.bitcoinPriceCurrency,
-                                                )
-                                            else null,
-                                        ),
-                                        onClick = { onOpenTransaction(tx) },
-                                    )
+                                            onClick = { onOpenTransaction(tx) },
+                                        )
+                                    }
+                                    is HistoryItem.Req -> {
+                                        CashuRequestRow(
+                                            request = item.request,
+                                            timestamp = formatRelativeTimestamp(item.request.createdAtEpochMillis),
+                                            primaryAmountText = requestRowAmount(
+                                                item.request, formatter, settings.useBitcoinSymbol,
+                                            ),
+                                            secondaryAmountText = null,
+                                            onClick = { onOpenCashuRequest(item.request) },
+                                            onLongClick = { requestPendingDelete = item.request },
+                                        )
+                                    }
                                 }
-                                is HistoryItem.Req -> {
-                                    CashuRequestRow(
-                                        request = item.request,
-                                        timestamp = formatRelativeTimestamp(item.request.createdAtEpochMillis),
-                                        primaryAmountText = requestRowAmount(
-                                            item.request, formatter, settings.useBitcoinSymbol,
-                                        ),
-                                        secondaryAmountText = null,
-                                        onClick = { onOpenCashuRequest(item.request) },
-                                        onLongClick = { requestPendingDelete = item.request },
-                                    )
+                                if (item != section.items.last()) CanvasDivider()
                                 }
                             }
-                            if (item != section.items.last()) CanvasDivider()
                         }
                     }
                 }
@@ -280,7 +325,11 @@ fun HistoryScreen(
 }
 
 @Composable
-private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean) {
+private fun HistoryEmptyState(
+    filter: HistoryFilter,
+    hasQuery: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val (icon, title, supporting) = when {
         hasQuery -> Triple(Icons.Outlined.Search, "No matches", null)
         filter == HistoryFilter.Pending -> Triple(
@@ -294,14 +343,15 @@ private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean) {
             null,
         )
         else -> Triple(
-            Icons.Filled.Bolt,
+            Icons.Outlined.History,
             "No activity yet",
             "Your first payment will show up here.",
         )
     }
-    // Pulse the empty-state bolt to match iOS.
+    // Pulse the empty-state glyph (resting state under reduce-motion).
+    val reducedMotion = rememberReducedMotion()
     val transition = rememberInfiniteTransition(label = "empty-pulse")
-    val alpha by transition.animateFloat(
+    val pulseAlpha by transition.animateFloat(
         initialValue = 0.4f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -311,7 +361,7 @@ private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean) {
         label = "empty-pulse-alpha",
     )
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -324,7 +374,7 @@ private fun HistoryEmptyState(filter: HistoryFilter, hasQuery: Boolean) {
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .size(HISTORY_EMPTY_ICON_SIZE)
-                    .alpha(if (icon == Icons.Filled.Bolt) alpha else 1f),
+                    .alpha(if (icon == Icons.Outlined.History && !reducedMotion) pulseAlpha else 1f),
             )
             Text(
                 text = title,

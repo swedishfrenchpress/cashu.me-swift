@@ -1,27 +1,25 @@
 package org.cashu.wallet.ui.settings
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.VpnKey
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.QrCode
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -30,35 +28,39 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import org.cashu.wallet.Core.LockedReceiveRequest
+import org.cashu.wallet.Core.NostrService
 import org.cashu.wallet.Core.SettingsManager
-import org.cashu.wallet.Models.P2PKKeyInfo
-import org.cashu.wallet.ui.components.CanvasDivider
-import org.cashu.wallet.ui.components.CashuTextField
-import org.cashu.wallet.ui.components.EmptyState
-import org.cashu.wallet.ui.components.InlineNotice
-import org.cashu.wallet.ui.components.PrimaryButton
+import org.cashu.wallet.ui.components.NavRow
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.ToggleRow
 import org.cashu.wallet.ui.theme.CashuTheme
 
+/** A QR payload the hub is currently presenting. */
+private data class QrPayload(val title: String, val content: String)
+
+/**
+ * The "Locked Ecash" settings hub (iOS P2PKSettingsSection): explains P2PK in
+ * plain language and surfaces the recoverable seed-derived primary key.
+ * Disposable device-only keys live on the pushed Advanced Keys screen.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun P2PKScreen(
     settingsManager: SettingsManager,
+    nostrService: NostrService,
+    onOpenAdvancedKeys: () -> Unit,
     onClose: () -> Unit,
 ) {
     val settings by settingsManager.state.collectAsState()
-    val clipboard = LocalClipboardManager.current
-    var showImport by remember { mutableStateOf(false) }
-    var importError by remember { mutableStateOf<String?>(null) }
-    var keyToRemove by remember { mutableStateOf<P2PKKeyInfo?>(null) }
+    // Recompute when the Nostr identity settles (seed key becomes available).
+    val nostrState by nostrService.state.collectAsState()
+    val primaryKey = remember(nostrState) { settingsManager.primaryP2PKKeyInfo() }
+
+    var showExplainer by remember { mutableStateOf(false) }
+    var activeQr by remember { mutableStateOf<QrPayload?>(null) }
+    var revealNsec by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -69,6 +71,11 @@ fun P2PKScreen(
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    IconButton(onClick = { showExplainer = true }) {
+                        Icon(Icons.Outlined.Info, contentDescription = "How locking works")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                 ),
@@ -76,165 +83,113 @@ fun P2PKScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
         ) {
-            SectionHeader("Your keys")
-            if (settings.p2pkKeys.isEmpty()) {
-                EmptyState(
-                    icon = Icons.Outlined.ContentCopy,
-                    title = "No P2PK keys yet",
-                    supporting = "Generate a key to lock ecash you receive to it.",
+            Text(
+                text = "Lock ecash to a key so only its holder can claim it — even if the token is intercepted in transit.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.snug,
+                ),
+            )
+            Spacer(Modifier.height(CashuTheme.spacing.default))
+
+            SectionHeader("Your key")
+            if (primaryKey != null) {
+                KeyCard(
+                    title = "Your key",
+                    pubkey = primaryKey.publicKey,
+                    status = KeyCardStatus.SeedBacked,
+                    actions = listOf(
+                        KeyCardAction("Show QR", Icons.Outlined.QrCode) {
+                            val locked = LockedReceiveRequest.build(nostrService, settingsManager)
+                            activeQr = if (locked != null) {
+                                QrPayload("Receive Locked Ecash", locked)
+                            } else {
+                                // No Nostr transport available — fall back to the raw key.
+                                QrPayload("Your Key", P2PKKeyDisplay.canonical(primaryKey.publicKey))
+                            }
+                        },
+                        KeyCardAction("Reveal key", Icons.Outlined.Visibility) {
+                            P2PKKeyDisplay.nsec(primaryKey.privateKeyHex)?.let { revealNsec = it }
+                        },
+                    ),
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
                 )
             } else {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    settings.p2pkKeys.forEachIndexed { index, key ->
-                        P2PKRow(
-                            key = key,
-                            onCopy = { clipboard.setText(AnnotatedString(key.publicKey)) },
-                            onDelete = { keyToRemove = key },
-                        )
-                        if (index != settings.p2pkKeys.lastIndex) CanvasDivider(leadingInset = 16)
-                    }
-                }
+                Text(
+                    text = "Your key appears once your wallet finishes setting up.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
+                )
             }
+            FooterText(
+                "Show your QR or share this key, and anyone can send you locked ecash. " +
+                    "The key comes from your seed phrase, so only you can claim it.",
+            )
 
-            SectionHeader("Send flow")
+            SectionHeader("When sending")
             ToggleRow(
-                title = "Quick access to lock",
-                subtitle = "Show the P2PK lock button on the Send screen",
+                title = "Quick lock to my key",
+                subtitle = "Show a \u201CLock to my key\u201D shortcut when sending ecash.",
                 checked = settings.showP2PKButtonInDrawer,
                 onCheckedChange = settingsManager::setShowP2PKButtonInDrawer,
             )
 
-            Spacer(Modifier.height(CashuTheme.spacing.comfortable))
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = CashuTheme.spacing.comfortable),
-                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-            ) {
-                PrimaryButton(
-                    text = "Generate new key",
-                    onClick = {
-                        runCatching { settingsManager.generateP2PKKey() }
-                    },
-                )
-                PrimaryButton(
-                    text = "Import key…",
-                    onClick = { showImport = true },
-                )
-            }
+            Spacer(Modifier.height(CashuTheme.spacing.default))
+            NavRow(
+                title = "Advanced keys",
+                subtitle = advancedKeysSubtitle(settings.p2pkKeys.size),
+                leadingIcon = Icons.Outlined.MoreHoriz,
+                onClick = onOpenAdvancedKeys,
+            )
+            Spacer(Modifier.height(CashuTheme.spacing.section))
         }
     }
 
-    if (showImport) {
-        var input by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = {
-                showImport = false
-                importError = null
-            },
-            title = { Text("Import P2PK key") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug)) {
-                    CashuTextField(
-                        value = input,
-                        onValueChange = { input = it; importError = null },
-                        label = "nsec1…",
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                    if (importError != null) {
-                        InlineNotice(text = importError!!)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    runCatching { settingsManager.importP2PKNsec(input.trim()) }
-                        .onSuccess { showImport = false; importError = null }
-                        .onFailure { importError = it.message ?: "Could not import key." }
-                }) { Text("Import") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showImport = false; importError = null }) {
-                    Text("Cancel")
-                }
-            },
+    if (showExplainer) {
+        LockedEcashExplainerSheet(onDismiss = { showExplainer = false })
+    }
+    activeQr?.let { payload ->
+        QrDetailSheet(
+            title = payload.title,
+            content = payload.content,
+            onDismiss = { activeQr = null },
         )
     }
-
-    keyToRemove?.let { key ->
-        AlertDialog(
-            onDismissRequest = { keyToRemove = null },
-            title = { Text("Remove key?") },
-            text = {
-                Text(
-                    "Ecash locked to this key won't be redeemable without it.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    settingsManager.removeP2PKKey(key.id)
-                    keyToRemove = null
-                }) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { keyToRemove = null }) { Text("Cancel") }
-            },
+    revealNsec?.let { nsec ->
+        PrivateKeyRevealSheet(
+            title = "Your Key",
+            nsec = nsec,
+            onDismiss = { revealNsec = null },
         )
     }
 }
 
+internal fun advancedKeysSubtitle(count: Int): String = when (count) {
+    0 -> "Add a key that lives only on this device"
+    1 -> "1 device key"
+    else -> "$count device keys"
+}
+
+/** iOS SettingsSectionFooter: quiet explanatory prose under a section. */
 @Composable
-private fun P2PKRow(
-    key: P2PKKeyInfo,
-    onCopy: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(
-            horizontal = CashuTheme.spacing.comfortable,
-            vertical = CashuTheme.spacing.default,
-        ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.VpnKey,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(CashuTheme.spacing.loose),
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = key.label.ifBlank { "Untitled key" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = key.publicKey,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.MiddleEllipsis,
-            )
-        }
-        IconButton(onClick = onCopy) {
-            Icon(
-                imageVector = Icons.Outlined.ContentCopy,
-                contentDescription = "Copy",
-                modifier = Modifier.size(CashuTheme.spacing.loose),
-            )
-        }
-        IconButton(onClick = onDelete) {
-            Icon(
-                imageVector = Icons.Outlined.Delete,
-                contentDescription = "Delete",
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(CashuTheme.spacing.loose),
-            )
-        }
-    }
+internal fun FooterText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = CashuTheme.spacing.comfortable,
+                vertical = CashuTheme.spacing.default,
+            ),
+    )
 }

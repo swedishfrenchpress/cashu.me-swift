@@ -1,5 +1,8 @@
 package org.cashu.wallet.ui.settings
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -130,7 +133,7 @@ fun NostrScreen(
                 onClick = { clipboard.setText(AnnotatedString(nostrState.npub)) },
                 editable = nostrState.npub.isNotBlank(),
             )
-            CanvasDivider(leadingInset = 16)
+            CanvasDivider(leadingInset = 16.dp)
             InspectorRow(
                 label = "hex",
                 value = nostrState.publicKeyHex.ifBlank { "—" },
@@ -209,7 +212,13 @@ fun NostrScreen(
                     ),
                 )
             } else {
-                Column(modifier = Modifier.fillMaxWidth()) {
+                // Relay add/remove animates the list resize (iOS
+                // .animation(value: settings.nostrRelays) parity).
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)),
+                ) {
                     settings.nostrRelays.forEachIndexed { index, relay ->
                         Row(
                             modifier = Modifier
@@ -236,7 +245,7 @@ fun NostrScreen(
                                 )
                             }
                         }
-                        if (index != settings.nostrRelays.lastIndex) CanvasDivider(leadingInset = 16)
+                        if (index != settings.nostrRelays.lastIndex) CanvasDivider(leadingInset = 16.dp)
                     }
                 }
             }
@@ -271,6 +280,7 @@ fun NostrScreen(
                         label = "nsec1…",
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
+                        isError = importError != null,
                     )
                     if (importError != null) {
                         InlineNotice(text = importError!!)

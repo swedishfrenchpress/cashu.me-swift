@@ -344,7 +344,16 @@ class WalletManager(
         val selectedMint = mintUrl ?: mutableState.value.activeMint?.url ?: throw IllegalStateException("No active mint.")
         val normalizedP2PKPubkey = SettingsManager.normalizeP2PKPublicKeyForSend(p2pkPubkey)
         return withLoadingResult {
-            val result = gateway.sendEcashToken(amount, memo, normalizedP2PKPubkey, selectedMint, unit)
+            val result = gateway.sendEcashToken(
+                amount,
+                memo,
+                normalizedP2PKPubkey,
+                selectedMint,
+                unit,
+                // Full signing set so proofs already locked to our keys can be
+                // swapped into the outgoing token (iOS TokenService parity).
+                settingsManager.allP2PKSigningKeyHexes(),
+            )
             val pending = PendingToken(
                 tokenId = UUID.randomUUID().toString(),
                 token = result.token,
@@ -614,8 +623,16 @@ class WalletManager(
     }
 
     private suspend fun deriveNostrKey(mnemonic: String) {
-        runCatching { nostrService.deriveKeypairFromSeed(gateway.mnemonicEntropy(mnemonic)) }
-            .onFailure { AppLogger.wallet.error("Nostr key derivation failed", it) }
+        // iOS parity (WalletManager+NPC.initializeNostrKeypairLocally): the Nostr
+        // seed is sha256(mnemonic utf8) — NOT the BIP39 entropy, which is only
+        // 16 bytes for a 12-word mnemonic and would fail the ≥32-byte check.
+        // The same seed phrase must derive the same Nostr/P2PK identity on both
+        // platforms so locked ecash stays recoverable across them.
+        runCatching {
+            val seed = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(mnemonic.toByteArray(Charsets.UTF_8))
+            nostrService.deriveKeypairFromSeed(seed)
+        }.onFailure { AppLogger.wallet.error("Nostr key derivation failed", it) }
     }
 
     private suspend fun openWalletRepositoryWithRecovery(mnemonic: String) {

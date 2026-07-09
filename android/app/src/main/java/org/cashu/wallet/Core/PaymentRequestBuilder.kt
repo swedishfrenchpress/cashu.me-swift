@@ -13,6 +13,7 @@ object PaymentRequestBuilder {
         nostrPubkeyHex: String,
         relays: List<String>,
         nip: String = "17",
+        p2pkPubkeyHex: String? = null,
     ): String {
         val nprofile = makeNprofile(nostrPubkeyHex, relays)
         val transport = listOf(
@@ -33,6 +34,19 @@ object PaymentRequestBuilder {
             if (singleUse != null) add(Nut18Key.Text("s") to Nut18Value.Bool(singleUse))
             if (mints.isNotEmpty()) add(Nut18Key.Text("m") to Nut18Value.Array(mints.map { Nut18Value.Text(it) }))
             if (!description.isNullOrBlank()) add(Nut18Key.Text("d") to Nut18Value.Text(description))
+            // Optional NUT-10 lock (NUT-18). A payer's wallet reads this and locks
+            // the proofs it creates to the given P2PK pubkey, so only its holder
+            // can redeem them. Encoded as cashu-ts does: `"nut10": {"k": kind, "d": data}`.
+            if (!p2pkPubkeyHex.isNullOrBlank()) {
+                add(
+                    Nut18Key.Text("nut10") to Nut18Value.Map(
+                        listOf(
+                            Nut18Key.Text("k") to Nut18Value.Text("P2PK"),
+                            Nut18Key.Text("d") to Nut18Value.Text(p2pkPubkeyHex),
+                        ),
+                    ),
+                )
+            }
             add(Nut18Key.Text("t") to Nut18Value.Array(listOf(Nut18Value.Map(transport))))
         }
         val cbor = Nut18Cbor.encode(Nut18Value.Map(request))
@@ -55,6 +69,36 @@ object PaymentRequestBuilder {
             }
         }
         return Bech32.encode("nprofile", tlv.toByteArray())
+    }
+}
+
+/**
+ * Builds the "receive locked ecash" artifact: a NUT-18 Cashu payment request that
+ * locks any payment to the wallet's primary (seed-derived) P2PK key and routes the
+ * proofs back over Nostr. Anyone who pays it sends ecash that only this wallet can
+ * redeem. Shared by the Locked Ecash settings hub (iOS LockedReceiveRequest).
+ */
+object LockedReceiveRequest {
+    fun build(
+        nostrService: NostrService,
+        settingsManager: SettingsManager,
+        amount: Long? = null,
+    ): String? {
+        val nostrPubkey = nostrService.state.value.publicKeyHex.takeIf { it.isNotBlank() } ?: return null
+        val primary = settingsManager.primaryP2PKKeyInfo() ?: return null
+        val relays = settingsManager.state.value.nostrRelays.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching {
+            PaymentRequestBuilder.build(
+                id = org.cashu.wallet.Models.CashuRequest.newId(),
+                amount = amount,
+                unit = "sat",
+                mints = emptyList(),
+                description = null,
+                nostrPubkeyHex = nostrPubkey,
+                relays = relays,
+                p2pkPubkeyHex = primary.publicKey,
+            )
+        }.getOrNull()
     }
 }
 

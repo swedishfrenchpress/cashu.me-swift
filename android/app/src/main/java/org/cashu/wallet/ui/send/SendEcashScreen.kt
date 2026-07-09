@@ -1,7 +1,9 @@
 package org.cashu.wallet.ui.send
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
@@ -19,13 +21,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -37,17 +42,16 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.UnfoldMore
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -70,6 +74,7 @@ import org.cashu.wallet.Core.Protocols.CurrencyAmount
 import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.UnitAmountEntry
+import org.cashu.wallet.Core.Wallet.userFacingWalletMessage
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Models.SendTokenResult
 import org.cashu.wallet.ui.components.AmountText
@@ -79,10 +84,12 @@ import org.cashu.wallet.ui.components.MintPickerSheet
 import org.cashu.wallet.ui.components.NumberPad
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
+import org.cashu.wallet.ui.components.SheetHeader
 import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.components.UnitPickerSheet
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
+import org.cashu.wallet.ui.theme.rememberReducedMotion
 import org.cashu.wallet.ui.theme.withMonoDigits
 
 // Inline status icons inside dense rows — smaller than the standard 20dp body icon.
@@ -102,13 +109,14 @@ private sealed interface SendFace {
     ) : SendFace
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SendEcashScreen(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
     priceService: org.cashu.wallet.Core.PriceService,
+    onBack: () -> Unit,
     onClose: () -> Unit,
+    onDismissLockChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -187,74 +195,68 @@ fun SendEcashScreen(
         }.exceptionOrNull()?.message
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        when (face) {
-                            SendFace.Input -> "Send Ecash"
-                            is SendFace.Generated -> "Pending Ecash"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                },
-                navigationIcon = {
+    // Generation counts as money-in-motion: block sheet dismissal.
+    LaunchedEffect(sending) { onDismissLockChanged(sending) }
+
+    // System back mirrors the header chevron: Generated → Input, Input → the
+    // Send surface. Swallow back while a token is being generated.
+    BackHandler(enabled = true) {
+        when {
+            sending -> Unit
+            face is SendFace.Generated -> face = SendFace.Input
+            else -> onBack()
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxHeight()) {
+        SheetHeader(
+            title = when (face) {
+                SendFace.Input -> "Send Ecash"
+                is SendFace.Generated -> "Pending Ecash"
+            },
+            navigationIcon = Icons.AutoMirrored.Outlined.ArrowBack,
+            navigationContentDescription = "Back",
+            onNavigationClick = {
+                when (face) {
+                    SendFace.Input -> onBack()
+                    is SendFace.Generated -> face = SendFace.Input
+                }
+            },
+            actions = {
+                val current = face
+                if (current is SendFace.Generated) {
                     IconButton(onClick = {
-                        when (face) {
-                            SendFace.Input -> onClose()
-                            is SendFace.Generated -> face = SendFace.Input
-                        }
+                        context.shareText(current.result.token, subject = "Cashu token")
                     }) {
-                        Icon(
-                            imageVector = when (face) {
-                                SendFace.Input -> Icons.Outlined.Close
-                                is SendFace.Generated -> Icons.AutoMirrored.Outlined.ArrowBack
-                            },
-                            contentDescription = "Close",
-                        )
+                        Icon(Icons.Outlined.IosShare, contentDescription = "Share")
                     }
-                },
-                actions = {
-                    val current = face
-                    if (current is SendFace.Generated) {
-                        IconButton(onClick = {
-                            context.shareText(current.result.token, subject = "Cashu token")
-                        }) {
-                            Icon(Icons.Outlined.IosShare, contentDescription = "Share")
-                        }
-                    } else if (current is SendFace.Input) {
-                        if (activeMint?.supportsMultipleUnits == true) {
-                            androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
-                                Text(
-                                    text = effectiveUnit.uppercase(),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                        }
-                        IconButton(onClick = { p2pkOn = !p2pkOn }) {
-                            Icon(
-                                imageVector = if (p2pkOn) Icons.Filled.Lock
-                                else Icons.Outlined.LockOpen,
-                                contentDescription = if (p2pkOn) "P2PK locked" else "P2PK off",
-                                tint = if (p2pkOn) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                } else if (current is SendFace.Input) {
+                    if (activeMint?.supportsMultipleUnits == true) {
+                        androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
+                            Text(
+                                text = effectiveUnit.uppercase(),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
-        },
-    ) { padding ->
+                    IconButton(onClick = { p2pkOn = !p2pkOn }) {
+                        Icon(
+                            imageVector = if (p2pkOn) Icons.Filled.Lock
+                            else Icons.Outlined.LockOpen,
+                            contentDescription = if (p2pkOn) "P2PK locked" else "P2PK off",
+                            tint = if (p2pkOn) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            },
+        )
         TwoFaceScreen(
             targetState = face,
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+                .weight(1f)
+                .fillMaxWidth(),
             forward = { initial, target ->
                 initial is SendFace.Input && target is SendFace.Generated
             },
@@ -300,9 +302,13 @@ fun SendEcashScreen(
                     p2pkInput = p2pkInput,
                     onP2pkInputChange = { p2pkInput = it },
                     p2pkInputError = p2pkInputError,
-                    p2pkLatestKeyHex = settings.p2pkKeys.firstOrNull()?.publicKey,
-                    onUseLatestP2pkKey = {
-                        settings.p2pkKeys.firstOrNull()?.let { p2pkInput = it.publicKey }
+                    // iOS "Lock to my key" shortcut: opt-in via the Locked Ecash
+                    // toggle, and it targets the seed-derived primary key.
+                    p2pkMyKeyHex = if (settings.showP2PKButtonInDrawer) {
+                        settingsManager.primaryP2PKKeyInfo()?.publicKey
+                    } else null,
+                    onUseMyP2pkKey = {
+                        settingsManager.primaryP2PKKeyInfo()?.let { p2pkInput = it.publicKey }
                     },
                     canSendWithP2pk = !p2pkOn || validatedP2pkPubkey != null,
                     onSend = {
@@ -333,7 +339,7 @@ fun SendEcashScreen(
                                 amount = ""
                                 memo = ""
                             } catch (t: Throwable) {
-                                errorText = t.message ?: "Could not generate token."
+                                errorText = t.userFacingWalletMessage
                             } finally {
                                 sending = false
                             }
@@ -428,8 +434,8 @@ private fun InputFace(
     p2pkInput: String,
     onP2pkInputChange: (String) -> Unit,
     p2pkInputError: String?,
-    p2pkLatestKeyHex: String?,
-    onUseLatestP2pkKey: () -> Unit,
+    p2pkMyKeyHex: String?,
+    onUseMyP2pkKey: () -> Unit,
     canSendWithP2pk: Boolean,
     onSend: () -> Unit,
 ) {
@@ -463,6 +469,18 @@ private fun InputFace(
         )
 
         Spacer(Modifier.height(CashuTheme.spacing.snug))
+        // iOS AmountEntryView: the amount dims primary → secondary while the
+        // requested amount exceeds the spendable balance.
+        val insufficient = !balanceLoading && amountValue > 0 && amountValue > mintBalance
+        val amountColor by animateColorAsState(
+            targetValue = if (insufficient) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            animationSpec = spring(stiffness = Spring.StiffnessMedium),
+            label = "amount-color",
+        )
         AmountText(
             text = when {
                 amount.isNotEmpty() -> amount
@@ -470,12 +488,34 @@ private fun InputFace(
                 else -> "0"
             },
             style = MaterialTheme.typography.displayMedium.withMonoDigits(),
+            color = amountColor,
         )
         Text(
             text = unitLabel,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // Fade+scale warning (iOS .transition(.opacity.combined(with: .scale))),
+        // reduce-motion collapses to a plain fade.
+        val reduceMotion = rememberReducedMotion()
+        AnimatedVisibility(
+            visible = insufficient,
+            enter = if (reduceMotion) {
+                fadeIn(spring(stiffness = Spring.StiffnessMedium))
+            } else {
+                fadeIn(spring(stiffness = Spring.StiffnessMedium)) + scaleIn(
+                    animationSpec = spring(stiffness = Spring.StiffnessMedium),
+                    initialScale = 0.95f,
+                )
+            },
+            exit = fadeOut(spring(stiffness = Spring.StiffnessMedium)),
+        ) {
+            Text(
+                text = "Insufficient balance",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
 
         CashuTextField(
             value = memo,
@@ -490,8 +530,8 @@ private fun InputFace(
                 input = p2pkInput,
                 onInputChange = onP2pkInputChange,
                 inputError = p2pkInputError,
-                latestKeyHex = p2pkLatestKeyHex,
-                onUseLatestKey = onUseLatestP2pkKey,
+                myKeyHex = p2pkMyKeyHex,
+                onUseMyKey = onUseMyP2pkKey,
             )
         }
 
@@ -510,9 +550,8 @@ private fun InputFace(
             enabled = canSend,
             loading = sending,
         )
-        Spacer(modifier = Modifier
-            .height(0.dp)
-            .navigationBarsPadding())
+        // Idiomatic inset spacer: exactly the navigation-bar height at the bottom.
+        Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
 }
 
@@ -521,8 +560,8 @@ private fun P2pkLockSection(
     input: String,
     onInputChange: (String) -> Unit,
     inputError: String?,
-    latestKeyHex: String?,
-    onUseLatestKey: () -> Unit,
+    myKeyHex: String?,
+    onUseMyKey: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -550,10 +589,10 @@ private fun P2pkLockSection(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (latestKeyHex != null) {
+        if (myKeyHex != null) {
             org.cashu.wallet.ui.components.GhostButton(
-                text = "Use my latest key",
-                onClick = onUseLatestKey,
+                text = "Lock to my key",
+                onClick = onUseMyKey,
             )
         }
     }
@@ -621,13 +660,26 @@ private fun GeneratedFace(
         }
     }
 
-    // Claimed resolves to the shared full-screen terminal (iOS parity).
+    // Claimed resolves to the shared full-screen terminal (iOS parity), with
+    // Amount/Mint metadata rows under the check.
     if (claimState == ClaimState.Claimed) {
         org.cashu.wallet.ui.components.PaymentStatusScreen(
             phase = org.cashu.wallet.ui.components.PaymentStatusPhase.Success,
             title = "Claimed",
-            detail = amountLabel,
             onDone = onDone,
+            rows = {
+                org.cashu.wallet.ui.components.InspectorRow(
+                    label = "Amount",
+                    value = amountLabel,
+                    leadingIcon = Icons.Outlined.Payments,
+                )
+                org.cashu.wallet.ui.components.CanvasDivider(leadingInset = 16.dp)
+                org.cashu.wallet.ui.components.InspectorRow(
+                    label = "Mint",
+                    value = org.cashu.wallet.Core.shortenMintUrl(mintUrl),
+                    leadingIcon = Icons.Outlined.AccountBalance,
+                )
+            },
         )
         return
     }
@@ -665,21 +717,21 @@ private fun GeneratedFace(
                     },
                     valueMonospaced = true,
                 )
-                org.cashu.wallet.ui.components.CanvasDivider(leadingInset = 16)
+                org.cashu.wallet.ui.components.CanvasDivider(leadingInset = 16.dp)
             }
             org.cashu.wallet.ui.components.InspectorRow(
                 label = "Unit",
                 value = unit.uppercase(),
             )
             if (fiatLabel != null) {
-                org.cashu.wallet.ui.components.CanvasDivider(leadingInset = 16)
+                org.cashu.wallet.ui.components.CanvasDivider(leadingInset = 16.dp)
                 org.cashu.wallet.ui.components.InspectorRow(
                     label = "Fiat",
                     value = fiatLabel,
                     valueMonospaced = true,
                 )
             }
-            org.cashu.wallet.ui.components.CanvasDivider(leadingInset = 16)
+            org.cashu.wallet.ui.components.CanvasDivider(leadingInset = 16.dp)
             org.cashu.wallet.ui.components.InspectorRow(
                 label = "Mint",
                 value = org.cashu.wallet.Core.shortenMintUrl(mintUrl),
@@ -693,7 +745,7 @@ private fun GeneratedFace(
                 copied = true
             },
         )
-        Spacer(modifier = Modifier.navigationBarsPadding())
+        Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
 }
 
@@ -708,8 +760,9 @@ private fun ClaimStatusRow(claimState: ClaimState) {
     ) { state ->
         when (state) {
             ClaimState.Pending -> {
+                val reducedMotion = rememberReducedMotion()
                 val transition = rememberInfiniteTransition(label = "pending-pulse")
-                val alpha by transition.animateFloat(
+                val pulseAlpha by transition.animateFloat(
                     initialValue = 1f,
                     targetValue = 0.4f,
                     animationSpec = infiniteRepeatable(
@@ -721,7 +774,7 @@ private fun ClaimStatusRow(claimState: ClaimState) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-                    modifier = Modifier.alpha(alpha),
+                    modifier = Modifier.alpha(if (reducedMotion) 1f else pulseAlpha),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Schedule,
@@ -741,9 +794,8 @@ private fun ClaimStatusRow(claimState: ClaimState) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
                 ) {
-                    CircularProgressIndicator(
+                    LoadingIndicator(
                         modifier = Modifier.size(CHECKING_PROGRESS_SIZE),
-                        strokeWidth = 1.5.dp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(

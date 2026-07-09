@@ -1,10 +1,10 @@
 package org.cashu.wallet.ui.receive
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -14,32 +14,29 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentPaste
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.QrCodeScanner
-import androidx.compose.material.icons.outlined.Receipt
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -49,24 +46,27 @@ import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.TokenParser
 import org.cashu.wallet.Core.WalletManager
-import org.cashu.wallet.Models.TokenInfo
 import org.cashu.wallet.ui.components.AmountText
-import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNotice
-import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.PrimaryButton
-import org.cashu.wallet.ui.components.TwoFaceCrossfade
+import org.cashu.wallet.ui.components.SecondaryButton
+import org.cashu.wallet.ui.components.SheetHeader
+import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
 private sealed interface ReceiveFace {
     data object Paste : ReceiveFace
-    data class Review(val token: String, val info: TokenInfo, val fee: Long, val locked: Boolean) : ReceiveFace
+    data class Review(val review: TokenReview) : ReceiveFace
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+// Floor for the pinned claim-terminal height: enough room for the glyph +
+// title + failure copy + the bottom-anchored Done button, in case the review
+// face measured unusually short.
+private val MinStatusHeight = 360.dp
+
 @Composable
 fun ReceiveEcashScreen(
     walletManager: WalletManager,
@@ -78,6 +78,7 @@ fun ReceiveEcashScreen(
     onScan: () -> Unit,
     prefilledPayload: String? = null,
     onPrefilledConsumed: () -> Unit = {},
+    onDismissLockChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -88,7 +89,7 @@ fun ReceiveEcashScreen(
     var face: ReceiveFace by remember { mutableStateOf(ReceiveFace.Paste) }
     var input by remember { mutableStateOf("") }
     var validating by remember { mutableStateOf(false) }
-    var receiving by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<TokenClaimStatus?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
 
     // Auto-paste a clipboard token on open (iOS autoPasteEcashReceive).
@@ -132,27 +133,23 @@ fun ReceiveEcashScreen(
 
     fun validateAndReview(raw: String) {
         errorText = null
-        val token = TokenParser.extractToken(raw)
-        if (token == null) {
-            errorText = TokenParser.malformedTokenMessage(raw) ?: "Couldn't read token."
-            return
-        }
-        val info = TokenInfo.parse(token)
-        if (info == null) {
-            errorText = "Couldn't decode token."
-            return
+        val parsed = when (val outcome = parseToken(raw)) {
+            is TokenParseOutcome.Invalid -> {
+                errorText = outcome.message
+                return
+            }
+            is TokenParseOutcome.Ok -> outcome
         }
         validating = true
         scope.launch {
             try {
-                val fee = runCatching { walletManager.calculateReceiveFee(token) }.getOrDefault(0L)
-                val locks = TokenParser.p2pkPubkeys(token)
-                val unlocked = if (locks.isEmpty()) {
-                    true
-                } else {
-                    settingsManager.p2pkSigningKeysFor(locks).isNotEmpty()
-                }
-                face = ReceiveFace.Review(token = token, info = info, fee = fee, locked = !unlocked)
+                val review = tokenReviewDetails(
+                    token = parsed.token,
+                    info = parsed.info,
+                    walletManager = walletManager,
+                    settingsManager = settingsManager,
+                )
+                face = ReceiveFace.Review(review)
             } catch (t: Throwable) {
                 errorText = t.message ?: "Validation failed."
             } finally {
@@ -168,106 +165,135 @@ fun ReceiveEcashScreen(
         onPrefilledConsumed()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        when (face) {
-                            ReceiveFace.Paste -> "Receive ecash"
-                            is ReceiveFace.Review -> "Review token"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = {
+    // Don't let a swipe-down interrupt a redeem in flight.
+    LaunchedEffect(validating, status) {
+        onDismissLockChanged(validating || status == TokenClaimStatus.Claiming)
+    }
+
+    // System back unwinds Review → Paste; swallow it entirely while claiming.
+    // On a terminal (success/failure) face, back falls through to the sheet.
+    BackHandler(enabled = status == TokenClaimStatus.Claiming || (status == null && face is ReceiveFace.Review)) {
+        if (status == null) {
+            face = ReceiveFace.Paste
+            errorText = null
+        }
+    }
+
+    fun claim(review: TokenReview) {
+        if (status != null) return
+        status = TokenClaimStatus.Claiming
+        scope.launch {
+            status = claimToken(review, walletManager)
+        }
+    }
+
+    // The claim terminal replaces the whole sheet body (header included) but —
+    // unlike the send flow's full-height takeover — keeps the sheet at the
+    // height the review face occupied. iOS runs the whole claim as a phase
+    // morph inside the `.medium`-detent sheet (ReceiveTokenDetailView), so the
+    // sheet must not balloon to full screen here. We measure the wrap-content
+    // body continuously; when Receive is tapped the pin equals the face on
+    // screen, so the review → "Claiming…" swap has zero height jump.
+    val density = LocalDensity.current
+    var measuredBodyHeightPx by remember { mutableIntStateOf(0) }
+    val pinnedStatusHeight = with(density) { measuredBodyHeightPx.toDp() }.coerceAtLeast(MinStatusHeight)
+    Column(
+        modifier = if (status != null) {
+            Modifier.fillMaxWidth().height(pinnedStatusHeight)
+        } else {
+            Modifier.fillMaxWidth().onSizeChanged { measuredBodyHeightPx = it.height }
+        },
+    ) {
+        when (val current = status) {
+            // Claiming / success / failure: the shared terminal, pinned to the
+            // height the review face occupied (see comment above).
+            is TokenClaimStatus -> Box(Modifier.weight(1f).fillMaxWidth()) {
+                TokenClaimTerminal(
+                    status = current,
+                    formatter = formatter,
+                    useBitcoinSymbol = settings.useBitcoinSymbol,
+                    onDone = onClose,
+                    onRetry = { status = null },
+                )
+            }
+
+            null -> {
+                SheetHeader(
+                    title = when (face) {
+                        ReceiveFace.Paste -> "Receive ecash"
+                        is ReceiveFace.Review -> "Review token"
+                    },
+                    navigationIcon = when (face) {
+                        ReceiveFace.Paste -> Icons.Outlined.Close
+                        is ReceiveFace.Review -> Icons.AutoMirrored.Outlined.ArrowBack
+                    },
+                    navigationContentDescription = when (face) {
+                        ReceiveFace.Paste -> "Close"
+                        is ReceiveFace.Review -> "Back"
+                    },
+                    onNavigationClick = {
                         when (face) {
                             ReceiveFace.Paste -> onClose()
                             is ReceiveFace.Review -> face = ReceiveFace.Paste
                         }
-                    }) {
-                        Icon(Icons.Outlined.Close, contentDescription = "Close")
-                    }
-                },
-                actions = {
-                    if (face is ReceiveFace.Paste) {
-                        IconButton(onClick = onScan) {
-                            Icon(Icons.Outlined.QrCodeScanner, contentDescription = "Scan")
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
-        },
-    ) { padding ->
-        TwoFaceCrossfade(
-            targetState = face,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            label = "receive-ecash-face",
-        ) { current ->
-            when (current) {
-                is ReceiveFace.Paste -> PasteFace(
-                    input = input,
-                    onInputChange = { input = it; errorText = null },
-                    onPaste = {
-                        val clip = clipboard.getText()?.text
-                        if (!clip.isNullOrBlank()) input = clip
                     },
-                    onClear = { input = ""; errorText = null },
-                    onContinue = { validateAndReview(input) },
-                    onNewRequest = ::createNewRequest,
-                    busy = validating,
-                    errorText = errorText,
-                    canContinue = input.isNotBlank() && !validating,
-                )
-
-                is ReceiveFace.Review -> ReviewFace(
-                    info = current.info,
-                    fee = current.fee,
-                    locked = current.locked,
-                    receiving = receiving,
-                    formatter = formatter,
-                    useBitcoinSymbol = settings.useBitcoinSymbol,
-                    onReceive = {
-                        receiving = true
-                        errorText = null
-                        scope.launch {
-                            try {
-                                walletManager.receiveTokens(current.token)
-                                onClose()
-                            } catch (t: Throwable) {
-                                errorText = t.message ?: "Could not receive."
-                            } finally {
-                                receiving = false
+                    actions = {
+                        if (face is ReceiveFace.Paste) {
+                            IconButton(onClick = onScan) {
+                                Icon(Icons.Outlined.QrCodeScanner, contentDescription = "Scan")
                             }
                         }
                     },
-                    onReceiveLater = {
-                        val pending = org.cashu.wallet.Models.PendingReceiveToken(
-                            tokenId = current.token.take(64),
-                            token = current.token,
-                            amount = current.info.amount,
-                            mintUrl = current.info.mint,
-                            dateEpochMillis = System.currentTimeMillis(),
-                        )
-                        walletManager.savePendingReceiveToken(pending)
-                        onClose()
-                    },
-                    errorText = errorText,
                 )
+                // iOS pushes ReceiveTokenDetailView onto the sheet's
+                // NavigationStack (ReceiveView.navigationDestination), so
+                // paste ↔ review reads as a horizontal push/pop — not a fade.
+                TwoFaceScreen(
+                    targetState = face,
+                    modifier = Modifier.fillMaxWidth(),
+                    forward = { _, target -> target is ReceiveFace.Review },
+                    label = "receive-ecash-face",
+                ) { currentFace ->
+                    when (currentFace) {
+                        is ReceiveFace.Paste -> PasteFace(
+                            input = input,
+                            onInputChange = { input = it; errorText = null },
+                            onPaste = {
+                                val clip = clipboard.getText()?.text
+                                if (!clip.isNullOrBlank()) input = clip
+                            },
+                            onClear = { input = ""; errorText = null },
+                            onContinue = { validateAndReview(input) },
+                            onNewRequest = ::createNewRequest,
+                            busy = validating,
+                            errorText = errorText,
+                            canContinue = input.isNotBlank() && !validating,
+                        )
+
+                        is ReceiveFace.Review -> ReviewFace(
+                            review = currentFace.review,
+                            formatter = formatter,
+                            useBitcoinSymbol = settings.useBitcoinSymbol,
+                            onReceive = { claim(currentFace.review) },
+                            onReceiveLater = {
+                                walletManager.savePendingReceiveToken(
+                                    pendingReceiveTokenFrom(currentFace.review),
+                                )
+                                onClose()
+                            },
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 /**
- * iOS ReceiveEcashView form: a tall monospace token editor with a corner
- * paste/clear affordance, then Continue + New Request as sibling CTAs.
+ * iOS ReceiveEcashView form, at iOS `.medium`-detent proportions: a compact
+ * monospace token editor with the paste/clear affordance pinned to its
+ * bottom-trailing corner (not vertically centered), then Continue (primary)
+ * over New Request (tonal) — the CTA hierarchy iOS renders as glass siblings.
  */
 @Composable
 private fun PasteFace(
@@ -283,43 +309,43 @@ private fun PasteFace(
 ) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(horizontal = CashuTheme.spacing.comfortable)
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
     ) {
-        Spacer(Modifier.height(CashuTheme.spacing.micro))
-        CashuTextField(
-            value = input,
-            onValueChange = onInputChange,
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            placeholder = "cashuB…",
-            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-            ),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
-            trailingIcon = if (input.isBlank()) {
-                {
-                    IconButton(onClick = onPaste) {
-                        Icon(
-                            imageVector = Icons.Outlined.ContentPaste,
-                            contentDescription = "Paste",
-                        )
-                    }
-                }
-            } else {
-                {
-                    IconButton(onClick = onClear) {
-                        Icon(
-                            imageVector = Icons.Filled.Cancel,
-                            contentDescription = "Clear",
-                        )
-                    }
-                }
-            },
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            CashuTextField(
+                value = input,
+                onValueChange = onInputChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = "cashuB…",
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                ),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+                isError = errorText != null,
+                minLines = TokenFieldMinLines,
+                maxLines = TokenFieldMaxLines,
+            )
+            // Corner affordance (iOS bottomTrailing): paste when empty, clear when full.
+            IconButton(
+                onClick = if (input.isBlank()) onPaste else onClear,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(CornerAffordancePadding),
+            ) {
+                Icon(
+                    imageVector = if (input.isBlank()) {
+                        Icons.Outlined.ContentPaste
+                    } else {
+                        Icons.Filled.Cancel
+                    },
+                    contentDescription = if (input.isBlank()) "Paste" else "Clear",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         if (errorText != null) {
             InlineNotice(text = errorText)
         }
@@ -329,7 +355,7 @@ private fun PasteFace(
             enabled = canContinue,
             loading = busy,
         )
-        PrimaryButton(
+        SecondaryButton(
             text = "New Request",
             onClick = onNewRequest,
         )
@@ -337,21 +363,24 @@ private fun PasteFace(
     }
 }
 
+// ~6 monospace body lines: enough to show a token's head without swallowing
+// the sheet; the field scrolls internally beyond TokenFieldMaxLines.
+private const val TokenFieldMinLines = 6
+private const val TokenFieldMaxLines = 8
+private val CornerAffordancePadding = 4.dp
+
 @Composable
 private fun ReviewFace(
-    info: TokenInfo,
-    fee: Long,
-    locked: Boolean,
-    receiving: Boolean,
+    review: TokenReview,
     formatter: AmountFormatter,
     useBitcoinSymbol: Boolean,
     onReceive: () -> Unit,
     onReceiveLater: () -> Unit,
-    errorText: String?,
 ) {
+    val info = review.info
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
@@ -367,7 +396,7 @@ private fun ReviewFace(
         // ReceiveTokenDetailView.netReceiveAmount.
         val isSatToken = info.unit.equals("sat", ignoreCase = true)
         val tokenCurrency = CurrencyRegistry.currencyForMintUnit(info.unit)
-        val netAmount = info.amount - fee.coerceIn(0L, info.amount)
+        val netAmount = info.amount - review.fee.coerceIn(0L, info.amount)
         AmountText(
             text = if (isSatToken) {
                 formatter.formatWalletSats(netAmount, useBitcoinSymbol)
@@ -376,56 +405,23 @@ private fun ReviewFace(
             },
             style = MaterialTheme.typography.displayMedium.withMonoDigits(),
         )
-        Column(modifier = Modifier.fillMaxWidth()) {
-            InspectorRow(
-                label = "Fee",
-                value = when {
-                    fee == 0L -> "Free"
-                    isSatToken -> "$fee sat"
-                    else -> CurrencyAmount(fee, tokenCurrency).formatted()
-                },
-                leadingIcon = Icons.Outlined.Receipt,
-            )
-            CanvasDivider(leadingInset = 16)
-            InspectorRow(
-                label = "Mint",
-                value = info.mint,
-                leadingIcon = Icons.Outlined.AccountBalance,
-            )
-            if (locked) {
-                CanvasDivider(leadingInset = 16)
-                InspectorRow(
-                    label = "P2PK",
-                    value = "Requires your key",
-                    leadingIcon = Icons.Outlined.Lock,
-                )
-            }
-            if (info.memo != null) {
-                CanvasDivider(leadingInset = 16)
-                InspectorRow(
-                    label = "Memo",
-                    value = info.memo,
-                )
-            }
-        }
-        if (errorText != null) {
-            InlineNotice(text = errorText)
-        }
+        TokenInspectorRows(
+            info = info,
+            fee = review.fee,
+            locked = review.locked,
+        )
+        // Claim outcomes no longer land here: tapping Receive swaps the sheet
+        // body to the PaymentStatusScreen terminal (success check / failure X).
         Spacer(modifier = Modifier.height(CashuTheme.spacing.snug))
         PrimaryButton(
-            text = if (receiving) "Receiving…" else "Receive",
+            text = "Receive",
             onClick = onReceive,
-            enabled = !locked && !receiving,
-            loading = receiving,
+            enabled = !review.locked,
         )
         GhostButton(
             text = "Receive later",
             onClick = onReceiveLater,
-            enabled = !receiving,
         )
         Spacer(modifier = Modifier.navigationBarsPadding())
     }
 }
-
-private fun Modifier.heightFor(height: Int): Modifier =
-    this.then(Modifier.height(height.dp))

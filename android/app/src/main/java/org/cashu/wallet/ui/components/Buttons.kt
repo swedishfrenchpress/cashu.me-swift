@@ -1,20 +1,34 @@
 package org.cashu.wallet.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -22,14 +36,44 @@ import org.cashu.wallet.ui.theme.CashuTheme
 // labelLarge baseline inside that height and doesn't belong on the spacing scale.
 private val ButtonMinHeight = 56.dp
 private val ButtonContentVertical = 14.dp
-private val ButtonProgressSize = 20.dp
+private val ButtonProgressSize = 24.dp
+// Chevron-scale glyph inside GhostButton labels.
+private val GhostButtonIconSize = 16.dp
+private const val PressedScale = 0.97f
+// iOS TextLinkButtonStyle: text links dim to 0.6 while pressed.
+private const val TextLinkPressedAlpha = 0.6f
+
+@Composable
+private fun rememberPressScale(interactionSource: MutableInteractionSource): Float {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) PressedScale else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "press-scale",
+    )
+    return scale
+}
 
 /**
- * The Singular Button: every full-width CTA — primary and secondary — is the same
- * tonal capsule (the M3 translation of the iOS glass capsule). Hierarchy comes
- * from order, copy, and disabled state; there is deliberately no bolder filled
- * variant and no outline variant. Labels are text-only (Iconless-CTA Rule).
+ * Pressed-opacity feedback for text-style buttons — the iOS
+ * `TextLinkButtonStyle` (opacity 0.6 while pressed) on a medium spring.
  */
+@Composable
+private fun rememberPressAlpha(interactionSource: MutableInteractionSource): Float {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val alpha by animateFloatAsState(
+        targetValue = if (pressed) TextLinkPressedAlpha else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "press-alpha",
+    )
+    return alpha
+}
+
+/**
+ * The primary full-width CTA: filled M3 button on the theme's primary color
+ * (dynamic on Android 12+), spring press-scale, expressive loading indicator.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PrimaryButton(
     text: String,
@@ -38,20 +82,25 @@ fun PrimaryButton(
     enabled: Boolean = true,
     loading: Boolean = false,
 ) {
-    FilledTonalButton(
+    val interactionSource = remember { MutableInteractionSource() }
+    val scale = rememberPressScale(interactionSource)
+    Button(
         onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = ButtonMinHeight),
+            .heightIn(min = ButtonMinHeight)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
         enabled = enabled && !loading,
-        shape = MaterialTheme.shapes.extraLarge,
+        interactionSource = interactionSource,
         contentPadding = PaddingValues(horizontal = CashuTheme.spacing.section, vertical = ButtonContentVertical),
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (loading) {
-                CircularProgressIndicator(
+                LoadingIndicator(
                     modifier = Modifier.size(ButtonProgressSize),
-                    strokeWidth = 2.dp,
                     color = LocalContentColor.current,
                 )
             } else {
@@ -64,6 +113,33 @@ fun PrimaryButton(
     }
 }
 
+/** The secondary full-width CTA: tonal, one step quieter than [PrimaryButton]. */
+@Composable
+fun SecondaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val scale = rememberPressScale(interactionSource)
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = ButtonMinHeight)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+        enabled = enabled,
+        interactionSource = interactionSource,
+        contentPadding = PaddingValues(horizontal = CashuTheme.spacing.section, vertical = ButtonContentVertical),
+    ) {
+        Text(text = text, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
 /** Inline non-emphasized action (Copy, Paste, Restore from seed, etc.). */
 @Composable
 fun GhostButton(
@@ -71,13 +147,25 @@ fun GhostButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    trailingIcon: ImageVector? = null,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val alpha = rememberPressAlpha(interactionSource)
     TextButton(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.graphicsLayer { this.alpha = alpha },
         enabled = enabled,
+        interactionSource = interactionSource,
     ) {
         Text(text = text, style = MaterialTheme.typography.labelLarge)
+        if (trailingIcon != null) {
+            Spacer(Modifier.width(CashuTheme.spacing.micro))
+            Icon(
+                imageVector = trailingIcon,
+                contentDescription = null,
+                modifier = Modifier.size(GhostButtonIconSize),
+            )
+        }
     }
 }
 
@@ -89,10 +177,13 @@ fun DestructiveTextButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val alpha = rememberPressAlpha(interactionSource)
     TextButton(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.graphicsLayer { this.alpha = alpha },
         enabled = enabled,
+        interactionSource = interactionSource,
         colors = ButtonDefaults.textButtonColors(
             contentColor = MaterialTheme.colorScheme.error,
         ),

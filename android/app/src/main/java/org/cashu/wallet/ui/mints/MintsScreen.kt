@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,7 +31,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -65,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.cashu.wallet.Core.MintDiscoveryManager
 import org.cashu.wallet.Core.SettingsManager
+import org.cashu.wallet.Core.Wallet.userFacingWalletMessage
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Core.mintUrlCandidates
 import org.cashu.wallet.Core.normalizeUserMintUrl
@@ -80,7 +83,7 @@ import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MintsScreen(
     walletManager: WalletManager,
@@ -134,7 +137,7 @@ fun MintsScreen(
                     url = ""
                     nickname = ""
                 }
-                .onFailure { error = it.message ?: "Could not add mint." }
+                .onFailure { error = it.userFacingWalletMessage }
         }
     }
 
@@ -144,9 +147,12 @@ fun MintsScreen(
     Scaffold(
         modifier = Modifier
             .padding(contentPadding)
+            // The shell scaffold's padding already carries the status-bar inset;
+            // consume it so the nested TopAppBar doesn't apply it a second time.
+            .consumeWindowInsets(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            CenterAlignedTopAppBar(
+            LargeFlexibleTopAppBar(
                 title = { Text("Mints") },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -176,7 +182,7 @@ fun MintsScreen(
                         },
                         onRequestRemove = { pendingRemoval = mint },
                     )
-                    if (mint != walletState.mints.last()) CanvasDivider(leadingInset = 64)
+                    if (mint != walletState.mints.last()) CanvasDivider(leadingInset = 64.dp)
                 }
             }
 
@@ -212,6 +218,7 @@ fun MintsScreen(
                         label = "Mint URL",
                         placeholder = "https://…",
                         singleLine = true,
+                        isError = error != null,
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                             capitalization = KeyboardCapitalization.None,
@@ -253,18 +260,6 @@ fun MintsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(CashuTheme.spacing.snug))
-                }
-            }
-
-            walletState.errorMessage?.let { msg ->
-                item("err") {
-                    InlineNotice(
-                        text = msg,
-                        modifier = Modifier.padding(
-                            horizontal = CashuTheme.spacing.comfortable,
-                            vertical = CashuTheme.spacing.snug,
-                        ),
-                    )
                 }
             }
         }
@@ -493,6 +488,7 @@ private fun MintRow(
         DropdownMenu(
             expanded = menuOpen,
             onDismissRequest = { menuOpen = false },
+            shape = MaterialTheme.shapes.large,
         ) {
             DropdownMenuItem(
                 text = { Text("Set as Active") },

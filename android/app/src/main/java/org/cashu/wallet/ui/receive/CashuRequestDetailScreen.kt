@@ -75,6 +75,7 @@ import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.SectionHeader
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CashuTheme
+import org.cashu.wallet.ui.theme.rememberReducedMotion
 import org.cashu.wallet.ui.theme.withMonoDigits
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -207,7 +208,7 @@ fun CashuRequestDetailScreen(
                     value = mintLabel,
                     leadingIcon = Icons.Outlined.AccountBalance,
                 )
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Amount",
                     value = request.amount?.let {
@@ -216,20 +217,20 @@ fun CashuRequestDetailScreen(
                     leadingIcon = Icons.Outlined.AccountBalanceWallet,
                     valueMonospaced = true,
                 )
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Unit",
                     value = request.unit.uppercase(),
                     leadingIcon = Icons.Outlined.CurrencyExchange,
                 )
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Created",
                     value = formatDate(request.createdAtEpochMillis),
                     leadingIcon = Icons.Outlined.CalendarToday,
                 )
                 if (request.totalReceived > 0L) {
-                    CanvasDivider(leadingInset = 16)
+                    CanvasDivider(leadingInset = 16.dp)
                     InspectorRow(
                         label = "Total received",
                         value = formatRequestAmount(request.totalReceived),
@@ -325,6 +326,7 @@ private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean
                 color = CashuTheme.colors.received,
             )
         } else {
+            val reducedMotion = rememberReducedMotion()
             val transition = rememberInfiniteTransition(label = "waiting-pulse")
             val alpha by transition.animateFloat(
                 initialValue = 1f,
@@ -335,7 +337,7 @@ private fun StatusBlock(received: Boolean, paymentCount: Int, celebrate: Boolean
                 ),
                 label = "waiting-pulse-alpha",
             )
-            Box(modifier = Modifier.alpha(alpha)) {
+            Box(modifier = Modifier.alpha(if (reducedMotion) 1f else alpha)) {
                 Icon(
                     imageVector = Icons.Outlined.Schedule,
                     contentDescription = null,

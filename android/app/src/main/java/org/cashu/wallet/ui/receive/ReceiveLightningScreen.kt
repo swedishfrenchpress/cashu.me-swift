@@ -1,5 +1,6 @@
 package org.cashu.wallet.ui.receive
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -44,10 +46,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -74,6 +73,7 @@ import org.cashu.wallet.Core.Protocols.CurrencyAmount
 import org.cashu.wallet.Core.Protocols.CurrencyRegistry
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.UnitAmountEntry
+import org.cashu.wallet.Core.Wallet.userFacingWalletMessage
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.MintQuoteInfo
@@ -81,17 +81,20 @@ import org.cashu.wallet.Models.MintQuoteState
 import org.cashu.wallet.Models.PaymentMethodKind
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.GhostButton
+import org.cashu.wallet.ui.components.IconSwap
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintAvatar
 import org.cashu.wallet.ui.components.MintPickerSheet
 import org.cashu.wallet.ui.components.NumberPad
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
+import org.cashu.wallet.ui.components.SheetHeader
 import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.components.UnitPickerSheet
 import org.cashu.wallet.ui.components.shareText
 import org.cashu.wallet.ui.theme.CapsuleShape
 import org.cashu.wallet.ui.theme.CashuTheme
+import org.cashu.wallet.ui.theme.rememberReducedMotion
 import org.cashu.wallet.ui.theme.withMonoDigits
 
 private sealed interface ReceiveLnFace {
@@ -143,99 +146,95 @@ fun ReceiveLightningScreen(
     val showsUnitSelector = activeMint?.supportsMultipleMintUnits == true &&
         method != PaymentMethodKind.Onchain
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    val current = face
-                    val title = when (current) {
-                        ReceiveLnFace.Input -> "Receive"
-                        is ReceiveLnFace.Display -> when (current.quote.paymentMethod) {
-                            PaymentMethodKind.Bolt11 -> "Lightning Invoice"
-                            PaymentMethodKind.Bolt12 -> "Reusable Invoice"
-                            PaymentMethodKind.Onchain -> "Bitcoin Address"
-                        }
-                    }
-                    Text(title, style = MaterialTheme.typography.titleMedium)
-                },
-                navigationIcon = {
+    // System back unwinds Display → Input; from Input the sheet handles it.
+    BackHandler(enabled = face is ReceiveLnFace.Display) {
+        face = ReceiveLnFace.Input
+    }
+
+    Column(modifier = Modifier.fillMaxHeight()) {
+        SheetHeader(
+            title = when (val current = face) {
+                ReceiveLnFace.Input -> "Receive"
+                is ReceiveLnFace.Display -> when (current.quote.paymentMethod) {
+                    PaymentMethodKind.Bolt11 -> "Lightning Invoice"
+                    PaymentMethodKind.Bolt12 -> "Reusable Invoice"
+                    PaymentMethodKind.Onchain -> "Bitcoin Address"
+                }
+            },
+            navigationIcon = when (face) {
+                ReceiveLnFace.Input -> Icons.Outlined.Close
+                is ReceiveLnFace.Display -> Icons.AutoMirrored.Outlined.ArrowBack
+            },
+            navigationContentDescription = when (face) {
+                ReceiveLnFace.Input -> "Close"
+                is ReceiveLnFace.Display -> "Back"
+            },
+            onNavigationClick = {
+                when (face) {
+                    ReceiveLnFace.Input -> onClose()
+                    is ReceiveLnFace.Display -> face = ReceiveLnFace.Input
+                }
+            },
+            actions = {
+                val current = face
+                if (current is ReceiveLnFace.Display) {
                     IconButton(onClick = {
-                        when (face) {
-                            ReceiveLnFace.Input -> onClose()
-                            is ReceiveLnFace.Display -> face = ReceiveLnFace.Input
-                        }
+                        context.shareText(current.quote.request, subject = "Payment request")
                     }) {
-                        Icon(
-                            imageVector = when (face) {
-                                ReceiveLnFace.Input -> Icons.Outlined.Close
-                                is ReceiveLnFace.Display -> Icons.AutoMirrored.Outlined.ArrowBack
-                            },
-                            contentDescription = "Close",
-                        )
+                        Icon(Icons.Outlined.IosShare, contentDescription = "Share")
                     }
-                },
-                actions = {
-                    val current = face
-                    if (current is ReceiveLnFace.Display) {
-                        IconButton(onClick = {
-                            context.shareText(current.quote.request, subject = "Payment request")
-                        }) {
-                            Icon(Icons.Outlined.IosShare, contentDescription = "Share")
+                } else if (current is ReceiveLnFace.Input) {
+                    // Method picker rides the header (iOS parity): an icon
+                    // opening a menu, shown only when >1 method exists.
+                    if (supportedMethods.size > 1) {
+                        var methodMenuOpen by remember { mutableStateOf(false) }
+                        IconButton(onClick = { methodMenuOpen = true }) {
+                            // Animated glyph replacement on method switch
+                            // (iOS .contentTransition(.symbolEffect(.replace))).
+                            IconSwap(
+                                icon = method.menuIcon,
+                                contentDescription = "Payment method",
+                            )
                         }
-                    } else if (current is ReceiveLnFace.Input) {
-                        // Method picker rides the top bar (iOS parity): an icon
-                        // opening a menu, shown only when >1 method exists.
-                        if (supportedMethods.size > 1) {
-                            var methodMenuOpen by remember { mutableStateOf(false) }
-                            IconButton(onClick = { methodMenuOpen = true }) {
-                                Icon(
-                                    imageVector = method.menuIcon,
-                                    contentDescription = "Payment method",
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = methodMenuOpen,
-                                onDismissRequest = { methodMenuOpen = false },
-                            ) {
-                                supportedMethods.forEach { kind ->
-                                    DropdownMenuItem(
-                                        text = { Text(kind.displayName) },
-                                        leadingIcon = { Icon(kind.menuIcon, contentDescription = null) },
-                                        trailingIcon = if (kind == method) {
-                                            { Icon(Icons.Filled.Check, contentDescription = "Selected") }
-                                        } else null,
-                                        onClick = {
-                                            methodMenuOpen = false
-                                            method = kind
-                                            amount = ""
-                                            errorText = null
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                        if (showsUnitSelector) {
-                            androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
-                                Text(
-                                    text = effectiveUnit.uppercase(),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                        DropdownMenu(
+                            expanded = methodMenuOpen,
+                            onDismissRequest = { methodMenuOpen = false },
+                            shape = MaterialTheme.shapes.large,
+                        ) {
+                            supportedMethods.forEach { kind ->
+                                DropdownMenuItem(
+                                    text = { Text(kind.displayName) },
+                                    leadingIcon = { Icon(kind.menuIcon, contentDescription = null) },
+                                    trailingIcon = if (kind == method) {
+                                        { Icon(Icons.Filled.Check, contentDescription = "Selected") }
+                                    } else null,
+                                    onClick = {
+                                        methodMenuOpen = false
+                                        method = kind
+                                        amount = ""
+                                        errorText = null
+                                    },
                                 )
                             }
                         }
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
-        },
-    ) { padding ->
+                    if (showsUnitSelector) {
+                        androidx.compose.material3.TextButton(onClick = { unitPickerOpen = true }) {
+                            Text(
+                                text = effectiveUnit.uppercase(),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                }
+            },
+        )
         TwoFaceScreen(
             targetState = face,
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+                .weight(1f)
+                .fillMaxWidth(),
             forward = { initial, target ->
                 initial is ReceiveLnFace.Input && target is ReceiveLnFace.Display
             },
@@ -277,7 +276,7 @@ fun ReceiveLightningScreen(
                                 )
                                 face = ReceiveLnFace.Display(quote)
                             } catch (t: Throwable) {
-                                errorText = t.message ?: "Could not create request."
+                                errorText = t.userFacingWalletMessage
                             } finally {
                                 creating = false
                             }
@@ -583,6 +582,7 @@ private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
                 color = CashuTheme.colors.received,
             )
         } else {
+            val reducedMotion = rememberReducedMotion()
             val transition = rememberInfiniteTransition(label = "waiting-pulse")
             val alpha by transition.animateFloat(
                 initialValue = 1f,
@@ -593,7 +593,7 @@ private fun QuoteStatusRow(isPaid: Boolean, showCelebration: Boolean) {
                 ),
                 label = "waiting-pulse-alpha",
             )
-            Box(modifier = Modifier.alpha(alpha)) {
+            Box(modifier = Modifier.alpha(if (reducedMotion) 1f else alpha)) {
                 Icon(
                     imageVector = Icons.Outlined.Schedule,
                     contentDescription = null,

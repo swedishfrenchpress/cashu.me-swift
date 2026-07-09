@@ -1,8 +1,21 @@
 package org.cashu.wallet.ui.shell
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -14,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.compose.rememberNavController
@@ -25,9 +39,14 @@ import org.cashu.wallet.Core.TokenParser
 import org.cashu.wallet.Views.Components.ScannerView
 import org.cashu.wallet.Views.Send.ContactlessPayView
 import org.cashu.wallet.ui.onboarding.OnboardingScreen
-import org.cashu.wallet.ui.navigation.Routes
 import org.cashu.wallet.ui.navigation.TopTab
+import org.cashu.wallet.ui.navigation.cashuRequestDetailRouteFor
 import org.cashu.wallet.ui.navigation.navigateToTab
+import org.cashu.wallet.ui.receive.ReceiveEcashDetailScreen
+import org.cashu.wallet.ui.receive.ReceiveEcashScreen
+import org.cashu.wallet.ui.receive.ReceiveLightningScreen
+import org.cashu.wallet.ui.send.SendEcashScreen
+import org.cashu.wallet.ui.send.UnifiedSendScreen
 import org.cashu.wallet.ui.theme.CashuTheme
 
 /**
@@ -38,8 +57,9 @@ import org.cashu.wallet.ui.theme.CashuTheme
  *   - `needsOnboarding` → full-screen onboarding (no bottom nav)
  *   - otherwise         → 4-tab `WalletScaffold` over a `NavHost`
  *
- * Scanner and Contactless render as full-screen overlays driven by shell state,
- * matching the previous behavior. Later PRs may push them as NavHost destinations.
+ * Scanner and Contactless render as full-screen overlays driven by shell state;
+ * the money flows (Send / Send Ecash / Receive Ecash / Receive Lightning) are
+ * native modal bottom sheets hosted by [WalletFlowSheetHost] (iOS sheet parity).
  */
 @Composable
 fun CashuApp(container: AppContainer) {
@@ -79,22 +99,54 @@ fun CashuApp(container: AppContainer) {
             }
         }
 
-        when {
-            !walletState.isInitialized -> LoadingScreen()
-            walletState.needsOnboarding -> OnboardingScreen(walletManager = container.walletManager)
-            else -> AuthenticatedShell(container = container)
+        // Root gating cross-fades (fade-through) instead of hard-cutting.
+        val gate = when {
+            !walletState.isInitialized -> AppGate.Loading
+            walletState.needsOnboarding -> AppGate.Onboarding
+            else -> AppGate.Shell
+        }
+        AnimatedContent(
+            targetState = gate,
+            transitionSpec = {
+                (fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                    scaleIn(initialScale = 0.98f, animationSpec = spring(stiffness = Spring.StiffnessMedium)))
+                    .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+            },
+            label = "app-gate",
+        ) { target ->
+            when (target) {
+                AppGate.Loading -> LoadingScreen()
+                AppGate.Onboarding -> OnboardingScreen(walletManager = container.walletManager)
+                AppGate.Shell -> AuthenticatedShell(container = container)
+            }
         }
     }
 }
+
+private enum class AppGate { Loading, Onboarding, Shell }
 
 @Composable
 private fun AuthenticatedShell(container: AppContainer) {
     val navController = rememberNavController()
     var showContactless by remember { mutableStateOf(false) }
     var scannerTarget by remember { mutableStateOf<ScannerTarget?>(null) }
+    // The active money flow, hosted in a modal bottom sheet (iOS WalletFlow sheets).
+    var activeFlow by remember { mutableStateOf<WalletFlow?>(null) }
+    var flowDismissLocked by remember { mutableStateOf(false) }
     var pendingReceiveScan by remember { mutableStateOf<String?>(null) }
     var pendingSendScan by remember { mutableStateOf<String?>(null) }
     var pendingMintScan by remember { mutableStateOf<String?>(null) }
+    // Full-screen "Receive Ecash" page (iOS ReceiveTokenDetailView via
+    // .fullScreenCover): every token that arrives from *outside* the paste
+    // flow — scanner, cashu: deep link, token pasted into Send — lands here.
+    // The Receive sheet's Review face survives only for the paste flow and
+    // its in-sheet scan.
+    var receiveTokenDetail by remember { mutableStateOf<String?>(null) }
+    var receiveDetailDismissLocked by remember { mutableStateOf(false) }
+
+    // A fresh flow starts unlocked, whatever the last one left behind.
+    LaunchedEffect(activeFlow) { flowDismissLocked = false }
+    LaunchedEffect(receiveTokenDetail) { receiveDetailDismissLocked = false }
 
     val pendingDeepLink by container.navigationManager.pendingDeepLink.collectAsState()
     val connectivityState by container.connectivityObserver.state.collectAsState()
@@ -103,12 +155,19 @@ private fun AuthenticatedShell(container: AppContainer) {
         val deepLink = pendingDeepLink ?: return@LaunchedEffect
         when (deepLink.route) {
             CashuRoute.Receive -> {
-                pendingReceiveScan = deepLink.payload.orEmpty()
-                navController.navigate(Routes.RECEIVE_ECASH)
+                val payload = deepLink.payload.orEmpty()
+                if (payload.isNotBlank()) {
+                    // Deep-linked token: full-screen claim page (iOS presents
+                    // ReceiveTokenDetailView via .fullScreenCover from ContentView).
+                    receiveTokenDetail = payload
+                } else {
+                    // Bare cashu: link with no token — open the paste sheet.
+                    activeFlow = WalletFlow.ReceiveEcash
+                }
             }
             CashuRoute.Send -> {
                 pendingSendScan = deepLink.payload.orEmpty()
-                navController.navigate(Routes.SEND)
+                activeFlow = WalletFlow.Send
             }
             CashuRoute.Mints -> {
                 pendingMintScan = deepLink.payload.orEmpty()
@@ -124,62 +183,200 @@ private fun AuthenticatedShell(container: AppContainer) {
     }
 
     val activeScannerTarget = scannerTarget
-    when {
-        showContactless -> ContactlessPayView(
-            walletManager = container.walletManager,
-            onClose = { showContactless = false },
-            onLightningRequest = { invoice ->
-                pendingSendScan = invoice
-                showContactless = false
-                navController.navigate(Routes.SEND)
-            },
-        )
-        activeScannerTarget != null -> ScannerView(
-            onClose = { scannerTarget = null },
-            onScanned = { payload ->
-                scannerTarget = null
-                routeScannedPayload(
-                    target = activeScannerTarget,
-                    payload = payload,
-                    onReceive = {
-                        pendingReceiveScan = it
-                        navController.navigate(Routes.RECEIVE_ECASH)
-                    },
-                    onSend = {
-                        pendingSendScan = it
-                        navController.navigate(Routes.SEND)
-                    },
-                    onMint = {
-                        pendingMintScan = it
-                        navController.navigateToTab(TopTab.Mints)
-                    },
-                )
-            },
-        )
-        else -> WalletScaffold(
+    // The shell stays mounted; camera surfaces animate over it (slide-up + fade)
+    // instead of replacing it with a one-frame cut.
+    var lastScannerTarget by remember { mutableStateOf(ScannerTarget.Auto) }
+    if (activeScannerTarget != null) lastScannerTarget = activeScannerTarget
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        WalletScaffold(
             container = container,
             connectivityState = connectivityState,
             onScan = { scannerTarget = ScannerTarget.Auto },
-            onContactless = { showContactless = true },
-            onOpenReceiveToken = { token ->
-                pendingReceiveScan = token
-                navController.navigate(Routes.RECEIVE_ECASH)
-            },
-            pendingReceiveScan = pendingReceiveScan,
-            onPendingReceiveScanConsumed = { pendingReceiveScan = null },
-            pendingSendScan = pendingSendScan,
-            onPendingSendScanConsumed = { pendingSendScan = null },
+            onReceiveEcash = { activeFlow = WalletFlow.ReceiveEcash },
+            onReceiveLightning = { activeFlow = WalletFlow.ReceiveLightning },
+            onSend = { activeFlow = WalletFlow.Send },
             pendingMintScan = pendingMintScan,
             onPendingMintScanConsumed = { pendingMintScan = null },
+            // Pending "Receive later" tokens claim on the full-screen page.
+            onClaimReceiveToken = { receiveTokenDetail = it },
             navController = navController,
         )
+        AnimatedVisibility(
+            visible = showContactless,
+            enter = overlayEnter,
+            exit = overlayExit,
+        ) {
+            ContactlessPayView(
+                walletManager = container.walletManager,
+                onClose = { showContactless = false },
+                onLightningRequest = { invoice ->
+                    pendingSendScan = invoice
+                    showContactless = false
+                    activeFlow = WalletFlow.Send
+                },
+            )
+        }
+        AnimatedVisibility(
+            visible = activeScannerTarget != null,
+            enter = overlayEnter,
+            exit = overlayExit,
+        ) {
+            ScannerView(
+                onClose = { scannerTarget = null },
+                onScanned = { payload ->
+                    scannerTarget = null
+                    routeScannedPayload(
+                        target = lastScannerTarget,
+                        payload = payload,
+                        // In-sheet scan (ScannerTarget.Receive): back to the
+                        // sheet's Review face — the user is inside the paste flow.
+                        onReceiveInSheet = {
+                            pendingReceiveScan = it
+                            activeFlow = WalletFlow.ReceiveEcash
+                        },
+                        // Main scan button: tokens read as a brand-new full
+                        // screen, never the home sheet (iOS scanner parity).
+                        onReceiveDetail = { receiveTokenDetail = it },
+                        onSend = {
+                            pendingSendScan = it
+                            activeFlow = WalletFlow.Send
+                        },
+                        onMint = {
+                            pendingMintScan = it
+                            navController.navigateToTab(TopTab.Mints)
+                        },
+                    )
+                },
+            )
+        }
+        // Full-screen Receive Ecash claim page — rendered above the camera
+        // overlays (scanner closes before routing, so no live camera shows
+        // behind, matching the iOS fullScreenCover rationale).
+        // Remember the last payload so exit animates with content intact.
+        var lastReceiveTokenDetail by remember { mutableStateOf("") }
+        if (receiveTokenDetail != null) lastReceiveTokenDetail = receiveTokenDetail!!
+        AnimatedVisibility(
+            visible = receiveTokenDetail != null,
+            enter = overlayEnter,
+            exit = overlayExit,
+        ) {
+            ReceiveEcashDetailScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                priceService = container.priceService,
+                payload = lastReceiveTokenDetail,
+                onDone = { receiveTokenDetail = null },
+                onDismissLockChanged = { receiveDetailDismissLocked = it },
+            )
+        }
+        // System back (including predictive back) must dismiss the topmost overlay
+        // instead of popping the NavHost — or exiting the app — underneath it.
+        // Declared after WalletScaffold so this callback registers last on the
+        // OnBackPressedDispatcher and takes precedence over NavHost back handling
+        // while an overlay is visible. Receive detail renders above the scanner,
+        // which renders above Contactless — dismissal order matches. (Flow
+        // sheets live in their own window and handle back themselves.)
+        BackHandler(enabled = receiveTokenDetail != null || activeScannerTarget != null || showContactless) {
+            when {
+                receiveTokenDetail != null -> {
+                    // Never abandon a redeem in flight.
+                    if (!receiveDetailDismissLocked) receiveTokenDetail = null
+                }
+                activeScannerTarget != null -> scannerTarget = null
+                else -> showContactless = false
+            }
+        }
+    }
+
+    WalletFlowSheetHost(
+        flow = activeFlow,
+        dismissLocked = flowDismissLocked,
+        onDismissed = { activeFlow = null },
+    ) { flow, close ->
+        when (flow) {
+            WalletFlow.ReceiveEcash -> ReceiveEcashScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                nostrService = container.nostrService,
+                cashuRequestStore = container.cashuRequestStore,
+                onOpenRequest = { id ->
+                    close()
+                    navController.navigate(cashuRequestDetailRouteFor(id))
+                },
+                onClose = close,
+                // Camera overlays render in the activity window, underneath this
+                // sheet's dialog window — the sheet must yield before scanning.
+                onScan = {
+                    close()
+                    scannerTarget = ScannerTarget.Receive
+                },
+                prefilledPayload = pendingReceiveScan,
+                onPrefilledConsumed = { pendingReceiveScan = null },
+                onDismissLockChanged = { flowDismissLocked = it },
+            )
+
+            WalletFlow.ReceiveLightning -> ReceiveLightningScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                onClose = close,
+            )
+
+            WalletFlow.Send -> UnifiedSendScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                onClose = close,
+                onScan = {
+                    close()
+                    scannerTarget = ScannerTarget.Auto
+                },
+                onContactless = {
+                    close()
+                    showContactless = true
+                },
+                onSendEcash = { activeFlow = WalletFlow.SendEcash },
+                onOpenReceiveToken = { token ->
+                    // A token pasted into Send is a receive: bounce it to the
+                    // full-screen claim page (iOS SendRoute.receiveToken →
+                    // fullScreenCover), closing the Send sheet.
+                    close()
+                    receiveTokenDetail = token
+                },
+                onOpenMints = {
+                    close()
+                    navController.navigateToTab(TopTab.Mints)
+                },
+                onReceive = { activeFlow = WalletFlow.ReceiveEcash },
+                prefilledPayload = pendingSendScan,
+                onPrefilledConsumed = { pendingSendScan = null },
+                onDismissLockChanged = { flowDismissLocked = it },
+            )
+
+            WalletFlow.SendEcash -> SendEcashScreen(
+                walletManager = container.walletManager,
+                settingsManager = container.settingsManager,
+                priceService = container.priceService,
+                onBack = { activeFlow = WalletFlow.Send },
+                onClose = close,
+                onDismissLockChanged = { flowDismissLocked = it },
+            )
+        }
     }
 }
 
+// Camera-surface overlay motion: slide up over the shell, slide back down on close.
+private val overlayEnter = slideInVertically(
+    spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold),
+) { it / 5 } + fadeIn(spring(stiffness = Spring.StiffnessMedium))
+private val overlayExit = slideOutVertically(
+    spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold),
+) { it / 5 } + fadeOut(spring(stiffness = Spring.StiffnessMedium))
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun LoadingScreen() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator()
+        LoadingIndicator()
     }
 }
 
@@ -188,14 +385,15 @@ internal enum class ScannerTarget { Auto, Receive, Send, Mints }
 private fun routeScannedPayload(
     target: ScannerTarget,
     payload: String,
-    onReceive: (String) -> Unit,
+    onReceiveInSheet: (String) -> Unit,
+    onReceiveDetail: (String) -> Unit,
     onSend: (String) -> Unit,
     onMint: (String) -> Unit,
 ) {
     val trimmed = payload.trim()
     when (target) {
         ScannerTarget.Receive -> {
-            onReceive(TokenParser.extractToken(trimmed) ?: trimmed)
+            onReceiveInSheet(TokenParser.extractToken(trimmed) ?: trimmed)
             return
         }
         ScannerTarget.Send -> {
@@ -209,7 +407,7 @@ private fun routeScannedPayload(
         ScannerTarget.Auto -> Unit
     }
     TokenParser.extractToken(trimmed)?.let {
-        onReceive(it)
+        onReceiveDetail(it)
         return
     }
     when (PaymentRequestDecoder.decode(trimmed, includeCashuPaymentRequests = true, preferCashuPaymentRequests = true)) {

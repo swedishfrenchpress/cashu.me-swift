@@ -1,10 +1,19 @@
 package org.cashu.wallet.ui.send
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,17 +29,16 @@ import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Money
 import androidx.compose.material.icons.outlined.Nfc
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Receipt
 import androidx.compose.material.icons.outlined.UnfoldMore
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,6 +61,9 @@ import org.cashu.wallet.Core.PaymentRequestDecodeResult
 import org.cashu.wallet.Core.PaymentRequestDecoder
 import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.TokenParser
+import org.cashu.wallet.Core.Wallet.WalletMessage
+import org.cashu.wallet.Core.Wallet.userFacingWalletMessage
+import org.cashu.wallet.Core.Wallet.walletMessage
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Core.compatibleMintsForCashuPaymentRequest
 import org.cashu.wallet.Models.MeltPaymentResult
@@ -72,6 +83,7 @@ import org.cashu.wallet.ui.components.NumberPad
 import org.cashu.wallet.ui.components.PaymentStatusPhase
 import org.cashu.wallet.ui.components.PaymentStatusScreen
 import org.cashu.wallet.ui.components.PrimaryButton
+import org.cashu.wallet.ui.components.SheetHeader
 import org.cashu.wallet.ui.components.TwoFaceScreen
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
@@ -103,15 +115,15 @@ private sealed interface LockedRail {
 private sealed interface SendStatus {
     data object Sending : SendStatus
     data class Sent(val result: MeltPaymentResult?) : SendStatus
-    data class Failed(val reason: String) : SendStatus
+    data class Failed(val message: WalletMessage) : SendStatus
 }
 
 /**
  * The Send surface (iOS UnifiedSendView): one destination field that infers the
  * rail, a Scan · Ecash · Tap ways-to-send row, then amount → confirm → status.
  * Home's Send button lands here directly — there is no send chooser.
+ * Hosted in the shell's flow bottom sheet at full height (iOS `.large`).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UnifiedSendScreen(
     walletManager: WalletManager,
@@ -125,6 +137,7 @@ fun UnifiedSendScreen(
     onReceive: () -> Unit,
     prefilledPayload: String? = null,
     onPrefilledConsumed: () -> Unit = {},
+    onDismissLockChanged: (Boolean) -> Unit = {},
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
@@ -286,7 +299,7 @@ fun UnifiedSendScreen(
                 preferredMintURL = activeMintUrl,
             )
         }.onSuccess { meltQuote = it }
-            .onFailure { quoteError = it.message ?: "Couldn't fetch a quote." }
+            .onFailure { quoteError = it.userFacingWalletMessage }
     }
 
     fun goBack() {
@@ -324,142 +337,167 @@ fun UnifiedSendScreen(
                     }
                 }
             } catch (t: Throwable) {
-                status = SendStatus.Failed(t.message ?: "Payment failed.")
+                status = SendStatus.Failed(t.walletMessage)
             }
         }
     }
 
-    // Status terminal replaces the whole body (iOS PaymentStatusView slot).
-    when (val current = status) {
-        SendStatus.Sending -> {
-            PaymentStatusScreen(phase = PaymentStatusPhase.Processing, title = "Sending payment…")
-            return
-        }
-        is SendStatus.Sent -> {
-            PaymentStatusScreen(
-                phase = PaymentStatusPhase.Success,
-                title = "Payment sent",
-                detail = current.result?.let { r ->
-                    buildString {
-                        append("${r.amount} sat")
-                        if (r.feePaid > 0L) append(" · fee ${r.feePaid} sat")
-                    }
-                },
-                onDone = onClose,
-            )
-            return
-        }
-        is SendStatus.Failed -> {
-            PaymentStatusScreen(
-                phase = PaymentStatusPhase.Failure,
-                title = "Payment failed",
-                detail = current.reason,
-                doneLabel = "Try again",
-                onDone = { status = null },
-            )
-            return
-        }
-        null -> Unit
+    // Block sheet dismissal while the melt is in flight — a stray swipe must
+    // not tear down the coroutine mid-payment.
+    LaunchedEffect(status) { onDismissLockChanged(status == SendStatus.Sending) }
+
+    // System back mirrors the header chevron: unwind Confirm → Amount → Input;
+    // swallow back entirely while sending. From Input the sheet handles it.
+    BackHandler(enabled = status == SendStatus.Sending || (status == null && step != SendStep.Input)) {
+        if (status == null) goBack()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Send", style = MaterialTheme.typography.titleMedium) },
-                navigationIcon = {
-                    IconButton(onClick = ::goBack) {
-                        Icon(
-                            imageVector = if (step == SendStep.Input) {
-                                Icons.Outlined.Close
-                            } else {
-                                Icons.AutoMirrored.Outlined.ArrowBack
-                            },
-                            contentDescription = if (step == SendStep.Input) "Close" else "Back",
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
-        },
-    ) { padding ->
-        TwoFaceScreen(
-            targetState = step,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            forward = { initial, target -> target.ordinal >= initial.ordinal },
-            label = "unified-send-step",
-        ) { current ->
-            when (current) {
-                SendStep.Input -> InputFace(
-                    hasMints = walletState.mints.isNotEmpty(),
-                    hasBalance = walletState.hasAnyBalance,
-                    destination = destination,
-                    onDestinationChange = {
-                        destination = it
-                        inputHint = null
-                    },
-                    onPaste = {
-                        val clip = clipboard.getText()?.text?.trim().orEmpty()
-                        if (clip.isNotEmpty()) {
-                            destination = clip
-                            advance(clip)
+    Column(modifier = Modifier.fillMaxHeight()) {
+        // Status terminal replaces the whole body (iOS PaymentStatusView slot).
+        when (val current = status) {
+            SendStatus.Sending -> Box(Modifier.weight(1f).fillMaxWidth()) {
+                PaymentStatusScreen(phase = PaymentStatusPhase.Processing, title = "Sending payment…")
+            }
+            is SendStatus.Sent -> Box(Modifier.weight(1f).fillMaxWidth()) {
+                // Amount/Fee/Mint metadata rows (iOS PaymentStatusView success
+                // rows). Melt carries its own result; creq falls back to the
+                // confirmed amount and active mint.
+                val sentAmount = current.result?.amount ?: confirmAmount
+                val sentFee = current.result?.feePaid ?: 0L
+                val sentMint = current.result?.mintUrl ?: activeMintUrl
+                PaymentStatusScreen(
+                    phase = PaymentStatusPhase.Success,
+                    title = "Payment sent",
+                    onDone = onClose,
+                    rows = {
+                        if (sentAmount > 0L) {
+                            InspectorRow(
+                                label = "Amount",
+                                value = formatter.formatWalletSats(sentAmount, settings.useBitcoinSymbol),
+                                leadingIcon = Icons.Outlined.Payments,
+                            )
+                        }
+                        if (sentFee > 0L) {
+                            CanvasDivider(leadingInset = 16.dp)
+                            InspectorRow(
+                                label = "Fee",
+                                value = formatter.formatWalletSats(sentFee, settings.useBitcoinSymbol),
+                                leadingIcon = Icons.Outlined.Receipt,
+                            )
+                        }
+                        if (sentMint != null) {
+                            CanvasDivider(leadingInset = 16.dp)
+                            InspectorRow(
+                                label = "Mint",
+                                value = sentMint,
+                                leadingIcon = Icons.Outlined.AccountBalance,
+                            )
                         }
                     },
-                    onClear = {
-                        destination = ""
-                        inputHint = null
-                    },
-                    clipboardHasText = clipboard.hasText(),
-                    inputHint = inputHint,
-                    hasNfc = hasNfc,
-                    onScan = onScan,
-                    onSendEcash = onSendEcash,
-                    onContactless = onContactless,
-                    onOpenMints = onOpenMints,
-                    onReceive = onReceive,
                 )
+            }
+            is SendStatus.Failed -> Box(Modifier.weight(1f).fillMaxWidth()) {
+                PaymentStatusScreen(
+                    phase = PaymentStatusPhase.Failure,
+                    title = "Payment failed",
+                    detail = current.message.text,
+                    // A terminal outcome (already paid) can't be retried — offer
+                    // Done; anything else returns to the confirm step.
+                    doneLabel = if (current.message.isTerminal) "Done" else "Try again",
+                    onDone = {
+                        if (current.message.isTerminal) onClose() else status = null
+                    },
+                )
+            }
+            null -> {
+                SheetHeader(
+                    title = "Send",
+                    navigationIcon = if (step == SendStep.Input) {
+                        Icons.Outlined.Close
+                    } else {
+                        Icons.AutoMirrored.Outlined.ArrowBack
+                    },
+                    navigationContentDescription = if (step == SendStep.Input) "Close" else "Back",
+                    onNavigationClick = ::goBack,
+                )
+                TwoFaceScreen(
+                    targetState = step,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    forward = { initial, target -> target.ordinal >= initial.ordinal },
+                    label = "unified-send-step",
+                ) { current ->
+                when (current) {
+                    SendStep.Input -> InputFace(
+                        hasMints = walletState.mints.isNotEmpty(),
+                        hasBalance = walletState.hasAnyBalance,
+                        destination = destination,
+                        onDestinationChange = {
+                            destination = it
+                            inputHint = null
+                        },
+                        onPaste = {
+                            val clip = clipboard.getText()?.text?.trim().orEmpty()
+                            if (clip.isNotEmpty()) {
+                                destination = clip
+                                advance(clip)
+                            }
+                        },
+                        onClear = {
+                            destination = ""
+                            inputHint = null
+                        },
+                        clipboardHasText = clipboard.hasText(),
+                        inputHint = inputHint,
+                        hasNfc = hasNfc,
+                        onScan = onScan,
+                        onSendEcash = onSendEcash,
+                        onContactless = onContactless,
+                        onOpenMints = onOpenMints,
+                        onReceive = onReceive,
+                    )
 
-                SendStep.Amount -> AmountFace(
-                    destination = locked?.raw ?: destination,
-                    amount = amount,
-                    onAmountChange = { amount = it },
-                    mint = activeMint,
-                    balanceText = activeMint?.let {
-                        formatter.formatWalletSats(it.balance, settings.useBitcoinSymbol)
-                    },
-                    onPickMint = { mintPickerOpen = true },
-                    onUseMax = {
-                        activeMint?.balance?.takeIf { it > 0 }?.let { amount = it.toString() }
-                    },
-                    onContinue = {
-                        cameFromAmount = true
-                        step = SendStep.Confirm
-                    },
-                )
+                    SendStep.Amount -> AmountFace(
+                        destination = locked?.raw ?: destination,
+                        amount = amount,
+                        onAmountChange = { amount = it },
+                        mint = activeMint,
+                        balanceText = activeMint?.let {
+                            formatter.formatWalletSats(it.balance, settings.useBitcoinSymbol)
+                        },
+                        onPickMint = { mintPickerOpen = true },
+                        onUseMax = {
+                            activeMint?.balance?.takeIf { it > 0 }?.let { amount = it.toString() }
+                        },
+                        onContinue = {
+                            cameFromAmount = true
+                            step = SendStep.Confirm
+                        },
+                    )
 
-                SendStep.Confirm -> ConfirmFace(
-                    rail = locked,
-                    amountSats = confirmAmount,
-                    mint = activeMint,
-                    onPickMint = { mintPickerOpen = true },
-                    quote = meltQuote,
-                    quoteError = quoteError,
-                    onRetryQuote = {
-                        quoteError = null
-                        // Re-trigger the prefetch by nudging state.
-                        val current = selectedMintUrl
-                        selectedMintUrl = null
-                        selectedMintUrl = current
-                    },
-                    confirmError = confirmError,
-                    mintBalance = activeMint?.balance ?: 0L,
-                    formatter = formatter,
-                    useBitcoinSymbol = settings.useBitcoinSymbol,
-                    onPay = ::pay,
-                )
+                    SendStep.Confirm -> ConfirmFace(
+                        rail = locked,
+                        amountSats = confirmAmount,
+                        mint = activeMint,
+                        onPickMint = { mintPickerOpen = true },
+                        quote = meltQuote,
+                        quoteError = quoteError,
+                        onRetryQuote = {
+                            quoteError = null
+                            // Re-trigger the prefetch by nudging state.
+                            val current = selectedMintUrl
+                            selectedMintUrl = null
+                            selectedMintUrl = current
+                        },
+                        confirmError = confirmError,
+                        mintBalance = activeMint?.balance ?: 0L,
+                        formatter = formatter,
+                        useBitcoinSymbol = settings.useBitcoinSymbol,
+                        onPay = ::pay,
+                    )
+                    }
+                }
             }
         }
     }
@@ -526,21 +564,29 @@ private fun InputFace(
             singleLine = false,
             maxLines = 4,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
-            trailingIcon = when {
-                destination.isNotBlank() -> {
-                    {
-                        IconButton(onClick = onClear) {
-                            Icon(Icons.Outlined.Cancel, contentDescription = "Clear")
+            // Deliberate divergence from the iOS ClipboardPaymentChip: Android
+            // surfaces paste as an M3 trailing affordance. The Paste ↔ Clear
+            // swap cross-fades (no hard cut) as input state changes.
+            trailingIcon = if (destination.isNotBlank() || clipboardHasText) {
+                {
+                    AnimatedContent(
+                        targetState = destination.isNotBlank(),
+                        transitionSpec = {
+                            fadeIn(spring(stiffness = Spring.StiffnessMedium))
+                                .togetherWith(fadeOut(spring(stiffness = Spring.StiffnessMedium)))
+                        },
+                        label = "input-trailing",
+                    ) { hasInput ->
+                        if (hasInput) {
+                            IconButton(onClick = onClear) {
+                                Icon(Icons.Outlined.Cancel, contentDescription = "Clear")
+                            }
+                        } else {
+                            GhostButton(text = "Paste", onClick = onPaste)
                         }
                     }
                 }
-                clipboardHasText -> {
-                    {
-                        GhostButton(text = "Paste", onClick = onPaste)
-                    }
-                }
-                else -> null
-            },
+            } else null,
         )
         if (inputHint != null) {
             Spacer(Modifier.height(CashuTheme.spacing.default))
@@ -799,18 +845,23 @@ private fun ConfirmFace(
                         ),
                         valueMonospaced = true,
                     )
-                    CanvasDivider(leadingInset = 16)
+                    CanvasDivider(leadingInset = 16.dp)
                 }
+                // Fee/total land as a skeleton fill-in while the melt quote is
+                // in flight (iOS .redacted confirm rows) — no "…" flash.
+                val quoteLoading = quote == null && quoteError == null
                 InspectorRow(
                     label = "Network fee",
-                    value = quote?.let { "${it.feeReserve} sat" } ?: "…",
+                    value = quote?.let { "${it.feeReserve} sat" }.orEmpty(),
                     valueMonospaced = true,
+                    loading = quoteLoading,
                 )
-                CanvasDivider(leadingInset = 16)
+                CanvasDivider(leadingInset = 16.dp)
                 InspectorRow(
                     label = "Total",
-                    value = quote?.let { "${it.totalAmount} sat" } ?: "…",
+                    value = quote?.let { "${it.totalAmount} sat" }.orEmpty(),
                     valueMonospaced = true,
+                    loading = quoteLoading,
                 )
             } else {
                 InspectorRow(
@@ -819,7 +870,7 @@ private fun ConfirmFace(
                     valueMonospaced = true,
                 )
                 if (mint != null) {
-                    CanvasDivider(leadingInset = 16)
+                    CanvasDivider(leadingInset = 16.dp)
                     InspectorRow(
                         label = "Mint",
                         value = mint.name,
