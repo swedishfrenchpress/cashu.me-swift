@@ -40,7 +40,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -81,6 +80,7 @@ import org.cashu.wallet.ui.components.CashuSearchBar
 import org.cashu.wallet.ui.components.EmptyState
 import org.cashu.wallet.ui.components.IconSwap
 import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.components.TabTopBar
 import org.cashu.wallet.ui.components.TransactionRow
 import org.cashu.wallet.ui.components.TransactionRowModel
 import org.cashu.wallet.ui.components.formatRelativeTimestamp
@@ -142,13 +142,9 @@ fun HistoryScreen(
             .consumeWindowInsets(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text("History") },
+            TabTopBar(
+                title = "History",
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background,
-                ),
                 actions = {
                     IconButton(onClick = { searching = !searching }) {
                         Icon(Icons.Outlined.Search, contentDescription = "Search")

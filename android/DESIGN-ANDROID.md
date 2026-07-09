@@ -31,6 +31,15 @@ like a port, make the Android-native choice instead.
   Roles used as designed; no custom ramps.
 - Money always chains `withMonoDigits()` (tabular figures) — amounts roll,
   never reflow. `asOverline()` for section headers. `CapsuleShape` available.
+- **Weight carve-outs (2026-07-10, cross-platform brand parity, user-directed):**
+  two deliberate deviations from stock W400. (1) The tab titles render **Bold**
+  via the shared `ui/components/TabTopBar.kt` — the one wrapper every top-level
+  tab (History/Mints/Settings) routes through, so their big collapsing titles are
+  identical by construction. (2) Every live amount-entry hero renders **SemiBold**
+  with the unit baked *inline* (`₿1,234` / `1,234 sat`, no separate caption) via
+  the shared `ui/components/AmountEntryHero.kt` + `AmountFormatter.entryDisplay`,
+  mirroring iOS `CurrencyAmountDisplay`. Kept at the `displayMedium` (45sp) size so
+  long amounts stay on one line. Native collapse-on-scroll is unchanged.
 
 ### Motion — M3 Expressive springs
 - `MaterialExpressiveTheme` + `MotionScheme.expressive()`: spring physics drive

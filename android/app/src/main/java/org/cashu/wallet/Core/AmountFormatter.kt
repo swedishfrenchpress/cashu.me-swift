@@ -30,6 +30,30 @@ class AmountFormatter(
         }
     }
 
+    /**
+     * Inline display string for a *live* amount-entry hero — the unit is baked
+     * into the number (`₿1,234` / `1,234 sat`) exactly like iOS
+     * `AmountFormatter.entryPrimary`, so entry screens need no separate unit
+     * caption. Sats parse-then-format (which adds grouping); non-sat units keep
+     * the typed fraction verbatim and append the unit code.
+     */
+    fun entryDisplay(
+        raw: String,
+        isSat: Boolean,
+        unit: String,
+        useBitcoinSymbol: Boolean,
+    ): String {
+        if (isSat) {
+            return formatWalletSats(raw.toLongOrNull() ?: 0L, useBitcoinSymbol = useBitcoinSymbol)
+        }
+        val sep = "."
+        val parts = raw.split(sep)
+        val intValue = parts.getOrNull(0)?.toLongOrNull() ?: 0L
+        val grouped = NumberFormat.getIntegerInstance(locale).format(intValue)
+        val number = if (raw.contains(sep)) grouped + sep + parts.getOrNull(1).orEmpty() else grouped
+        return "$number ${unit.uppercase()}"
+    }
+
     fun formatBitcoin(amountSats: Long, useBitcoinSymbol: Boolean): String {
         val btc = amountSats.toDouble() / 100_000_000.0
         val symbol = if (useBitcoinSymbol) "₿" else "BTC"

@@ -76,7 +76,7 @@ import org.cashu.wallet.Core.UnitAmountEntry
 import org.cashu.wallet.Core.Wallet.userFacingWalletMessage
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.Models.SendTokenResult
-import org.cashu.wallet.ui.components.AmountText
+import org.cashu.wallet.ui.components.AmountEntryHero
 import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintPickerSheet
@@ -127,7 +127,6 @@ fun SendEcashScreen(
 
     var face: SendFace by remember { mutableStateOf(SendFace.Input) }
     var amount by remember { mutableStateOf("") }
-    var memo by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var pickerOpen by remember { mutableStateOf(false) }
@@ -269,8 +268,6 @@ fun SendEcashScreen(
                         amount = it
                         errorText = null
                     },
-                    memo = memo,
-                    onMemoChange = { memo = it },
                     activeMint = activeMint,
                     onPickMint = { pickerOpen = true },
                     onUseMax = {
@@ -289,7 +286,10 @@ fun SendEcashScreen(
                         isSatUnit -> formatter.formatWalletSats(mintBalance, settings.useBitcoinSymbol)
                         else -> CurrencyAmount(mintBalance, currency).formatted()
                     },
-                    unitLabel = if (isSatUnit) "sat" else effectiveUnit.uppercase(),
+                    isSat = isSatUnit,
+                    unit = effectiveUnit,
+                    useBitcoinSymbol = settings.useBitcoinSymbol,
+                    formatter = formatter,
                     decimals = currency.decimals,
                     sending = sending,
                     errorText = errorText,
@@ -325,14 +325,14 @@ fun SendEcashScreen(
                             try {
                                 val result = walletManager.sendTokens(
                                     amount = amountValue,
-                                    memo = memo.ifBlank { null },
+                                    // iOS Send Ecash has no memo field — always nil.
+                                    memo = null,
                                     p2pkPubkey = validatedP2pkPubkey,
                                     mintUrl = mintUrl,
                                     unit = effectiveUnit,
                                 )
                                 face = SendFace.Generated(result, mintUrl, effectiveUnit, amountValue)
                                 amount = ""
-                                memo = ""
                             } catch (t: Throwable) {
                                 errorText = t.userFacingWalletMessage
                             } finally {
@@ -410,8 +410,6 @@ fun SendEcashScreen(
 private fun InputFace(
     amount: String,
     onAmountChange: (String) -> Unit,
-    memo: String,
-    onMemoChange: (String) -> Unit,
     activeMint: org.cashu.wallet.Models.MintInfo?,
     onPickMint: () -> Unit,
     onUseMax: () -> Unit,
@@ -420,7 +418,10 @@ private fun InputFace(
     mintBalance: Long,
     balanceLoading: Boolean,
     balanceText: String,
-    unitLabel: String,
+    isSat: Boolean,
+    unit: String,
+    useBitcoinSymbol: Boolean,
+    formatter: AmountFormatter,
     decimals: Int,
     sending: Boolean,
     errorText: String?,
@@ -467,19 +468,14 @@ private fun InputFace(
             animationSpec = spring(stiffness = Spring.StiffnessMedium),
             label = "amount-color",
         )
-        AmountText(
-            text = when {
-                amount.isNotEmpty() -> amount
-                decimals > 0 -> "0." + "0".repeat(decimals)
-                else -> "0"
-            },
-            style = MaterialTheme.typography.displayMedium.withMonoDigits(),
+        AmountEntryHero(
+            entryRaw = amount,
+            isSat = isSat,
+            unit = unit,
+            decimals = decimals,
+            useBitcoinSymbol = useBitcoinSymbol,
+            formatter = formatter,
             color = amountColor,
-        )
-        Text(
-            text = unitLabel,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         // Fade+scale warning (iOS .transition(.opacity.combined(with: .scale))),
         // reduce-motion collapses to a plain fade.
@@ -502,14 +498,6 @@ private fun InputFace(
                 color = MaterialTheme.colorScheme.error,
             )
         }
-
-        CashuTextField(
-            value = memo,
-            onValueChange = onMemoChange,
-            modifier = Modifier.fillMaxWidth(),
-            label = "Memo (optional)",
-            singleLine = true,
-        )
 
         AnimatedVisibility(visible = p2pkOn) {
             P2pkLockSection(

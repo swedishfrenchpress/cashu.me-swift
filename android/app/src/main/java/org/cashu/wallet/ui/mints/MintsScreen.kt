@@ -32,7 +32,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -80,6 +79,7 @@ import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintAvatar
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.components.TabTopBar
 import org.cashu.wallet.ui.theme.CashuTheme
 import org.cashu.wallet.ui.theme.withMonoDigits
 
@@ -152,14 +152,7 @@ fun MintsScreen(
             .consumeWindowInsets(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text("Mints") },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
+            TabTopBar(title = "Mints", scrollBehavior = scrollBehavior)
         },
     ) { padding ->
         LazyColumn(

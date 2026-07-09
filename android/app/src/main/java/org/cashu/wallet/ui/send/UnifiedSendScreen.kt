@@ -67,6 +67,7 @@ import org.cashu.wallet.Core.compatibleMintsForCashuPaymentRequest
 import org.cashu.wallet.Models.MeltPaymentResult
 import org.cashu.wallet.Models.MeltQuoteInfo
 import org.cashu.wallet.Models.MintInfo
+import org.cashu.wallet.ui.components.AmountEntryHero
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.CanvasDivider
 import org.cashu.wallet.ui.components.CashuTextField
@@ -468,6 +469,8 @@ fun UnifiedSendScreen(
                         onUseMax = {
                             activeMint?.balance?.takeIf { it > 0 }?.let { amount = it.toString() }
                         },
+                        useBitcoinSymbol = settings.useBitcoinSymbol,
+                        formatter = formatter,
                         onContinue = {
                             cameFromAmount = true
                             step = SendStep.Confirm
@@ -702,6 +705,8 @@ private fun AmountFace(
     balanceText: String?,
     onPickMint: () -> Unit,
     onUseMax: () -> Unit,
+    useBitcoinSymbol: Boolean,
+    formatter: AmountFormatter,
     onContinue: () -> Unit,
 ) {
     val amountValue = amount.toLongOrNull() ?: 0L
@@ -713,14 +718,13 @@ private fun AmountFace(
     ) {
         ToPill(destination = destination)
         Spacer(Modifier.height(CashuTheme.spacing.section))
-        AmountText(
-            text = amount.ifEmpty { "0" },
-            style = MaterialTheme.typography.displayMedium.withMonoDigits(),
-        )
-        Text(
-            text = "sat",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        AmountEntryHero(
+            entryRaw = amount,
+            isSat = true,
+            unit = "sat",
+            decimals = 0,
+            useBitcoinSymbol = useBitcoinSymbol,
+            formatter = formatter,
         )
         Spacer(Modifier.height(CashuTheme.spacing.default))
         if (mint != null) {
