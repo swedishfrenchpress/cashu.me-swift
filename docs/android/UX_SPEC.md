@@ -14,7 +14,7 @@ Cashu Wallet is a **system utility**, not a crypto dashboard. The bar is set by 
 
 **Prioritized:** restraint and clarity; native materials and motion; numbers given the care of a stopwatch; semantic-only color; one strong action per surface; readable by a phone-illiterate user.
 
-### Named rules carried over from iOS DESIGN.md
+### Named rules carried over from iOS [`DESIGN.md`](../ios/DESIGN.md)
 
 | Rule | Meaning on Android |
 |------|---------|
@@ -287,7 +287,7 @@ Body, top-to-bottom:
 6. **Number pad** — custom `NumberPadAmountInput` (already exists in `Views/Send/Components/`). Keep that logic; re-skin to use M3 tokens.
 7. **Send `FilledTonalButton`** — bottom-pinned, full width, disabled if amount is 0.
 
-On tap Send: per iOS DESIGN.md and the memory file *No Send-confirm gate* — **fire immediately**, no confirm modal. Loading spinner replaces button text. On success, face swaps to B.
+On tap Send: per iOS [`DESIGN.md`](../ios/DESIGN.md) and the memory file *No Send-confirm gate* — **fire immediately**, no confirm modal. Loading spinner replaces button text. On success, face swaps to B.
 
 **Face B — Token display.** `TopAppBar(title = "Pending ecash", navigationIcon = Close, actions = [Share])`.
 

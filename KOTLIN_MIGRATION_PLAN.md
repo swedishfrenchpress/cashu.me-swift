@@ -81,7 +81,7 @@ In-scope means Swift app source, Xcode/iOS configuration, app resources, product
 Re-run this before implementation begins and whenever files change:
 
 ```sh
-git ls-files CashuWallet docs README.md PRODUCT.md DESIGN.md DESIGN.json Package.swift Package.resolved button-audit-prompt.md button-fixes-prompt.md | while IFS= read -r f; do
+git ls-files CashuWallet docs README.md DESIGN.json Package.swift Package.resolved button-audit-prompt.md button-fixes-prompt.md | while IFS= read -r f; do
   rg -F -q "\`$f\`" KOTLIN_MIGRATION_PLAN.md || printf 'MISSING %s\n' "$f"
 done
 ```
@@ -722,8 +722,8 @@ Progress column:
 | --- | --- | --- | --- |
 | `.gitignore` | Translate | [x] | Android/Kotlin ignore patterns are present for Gradle state, Kotlin caches, Android Studio metadata, local SDK files, build outputs, keystores, heap dumps, and CDK/native intermediates. |
 | `README.md` | Reference | [x] | Product setup context is preserved at the root, and `android/README.md` now carries Android build/run instructions, feature state, and CDK dependency notes. |
-| `PRODUCT.md` | Reference | [x] | Product positioning and key flow guidance are carried into the Android README, Compose screen copy, feature scope, and quiet wallet-first UI structure. |
-| `DESIGN.md` | Reference | [x] | Visual/interaction guidance is represented through `CashuTheme`, shared Compose components, semantic state colors, restrained surfaces, and full-width action hierarchy. |
+| `docs/PRODUCT.md` | Reference | [x] | Product positioning and key flow guidance are carried into the Android README, Compose screen copy, feature scope, and quiet wallet-first UI structure. |
+| `docs/ios/DESIGN.md` | Reference | [x] | Visual/interaction guidance is represented through `CashuTheme`, shared Compose components, semantic state colors, restrained surfaces, and full-width action hierarchy. |
 | `DESIGN.json` | Reference | [x] | Token intent is mapped into Compose color, typography, shape, and button/amount-display components rather than a generated runtime JSON dependency. |
 | `Package.swift` | Reference | [x] | SwiftPM dependencies are replaced by the Gradle version catalog, including the CDK Kotlin artifact and Android equivalents for Compose, CameraX, MLKit, ZXing, OkHttp, serialization, and crypto helpers. |
 | `Package.resolved` | Reference | [x] | Swift resolved dependency versions were used as source context only; Android runtime dependency versions are owned by `android/gradle/libs.versions.toml`. |

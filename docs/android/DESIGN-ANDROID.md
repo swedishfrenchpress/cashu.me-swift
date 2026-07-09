@@ -2,7 +2,7 @@
 
 **Charter (2026-07-08): Android-first, Material 3 Expressive, no iOS constraints.**
 
-The iOS app's `DESIGN.md` governs **what** the product does — screens, flows,
+The iOS app's [`DESIGN.md`](../ios/DESIGN.md) governs **what** the product does — screens, flows,
 copy intent, feature semantics. It never governs how Android looks, moves, or
 feels. Android is a first-class native app: if a choice would make the app feel
 like a port, make the Android-native choice instead.
