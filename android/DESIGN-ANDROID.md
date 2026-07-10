@@ -11,21 +11,35 @@ like a port, make the Android-native choice instead.
 
 ## 1. Foundations
 
-### Color — Material You, always
-- **Dynamic color** (`dynamicLight/DarkColorScheme`) on Android 12+: the app's
-  palette comes from the user's wallpaper. Fallback: M3 baseline scheme
-  (violet family) on API 26–31. (`ui/theme/CashuTheme.kt`)
-- Full M3 color roles are used as designed: filled primary CTAs, tonal
-  secondaries, `secondaryContainer` nav indicator, tonal surface tiers.
+### Color — monochrome inverted ink
+- **Custom zero-chroma scheme** (`LightInkColorScheme` / `DarkInkColorScheme`
+  in `ui/theme/Color.kt`, applied in `ui/theme/CashuTheme.kt`): white canvas +
+  black ink in light mode, black canvas + white ink in dark mode — the brand
+  identity shared with iOS ("inverted ink"). All neutrals are pure grays.
+- **No Material You dynamic color** (locked decision, 2026-07-09): the palette
+  must never shift with the wallpaper. Brand > Monet.
+- Full M3 color roles are still used as designed: filled primary CTAs (black on
+  light / white on dark), tonal secondaries, `secondaryContainer` nav
+  indicator, tonal surface-container tiers (gray ramp). Components stay stock
+  Material — only the palette is branded.
 - **Semantic state hues stay fixed** (received green / pending orange / error
-  red via `CashuColors`) so payment state never shifts with the wallpaper.
-  These are the only hardcoded colors.
+  red via `CashuColors` + the `error` role) — chromatic color is reserved
+  exclusively for payment state.
 
 ### Type & shape — stock M3
 - `Typography()` and `Shapes()` defaults (`ui/theme/Type.kt`, `Shape.kt`).
   Roles used as designed; no custom ramps.
 - Money always chains `withMonoDigits()` (tabular figures) — amounts roll,
   never reflow. `asOverline()` for section headers. `CapsuleShape` available.
+- **Weight carve-outs (2026-07-10, cross-platform brand parity, user-directed):**
+  two deliberate deviations from stock W400. (1) The tab titles render **Bold**
+  via the shared `ui/components/TabTopBar.kt` — the one wrapper every top-level
+  tab (History/Mints/Settings) routes through, so their big collapsing titles are
+  identical by construction. (2) Every live amount-entry hero renders **SemiBold**
+  with the unit baked *inline* (`₿1,234` / `1,234 sat`, no separate caption) via
+  the shared `ui/components/AmountEntryHero.kt` + `AmountFormatter.entryDisplay`,
+  mirroring iOS `CurrencyAmountDisplay`. Kept at the `displayMedium` (45sp) size so
+  long amounts stay on one line. Native collapse-on-scroll is unchanged.
 
 ### Motion — M3 Expressive springs
 - `MaterialExpressiveTheme` + `MotionScheme.expressive()`: spring physics drive

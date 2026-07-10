@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -29,13 +30,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.cashu.wallet.ui.theme.CashuTheme
 
-// 56dp is the M3 CTA height; the 14dp internal vertical padding centers the
-// labelLarge baseline inside that height and doesn't belong on the spacing scale.
-private val ButtonMinHeight = 56.dp
-private val ButtonContentVertical = 14.dp
+// 58dp min height with 16dp vertical padding matches iOS's large glass capsule buttons.
+private val ButtonMinHeight = 58.dp
+private val ButtonContentVertical = 16.dp
 private val ButtonProgressSize = 24.dp
 // Chevron-scale glyph inside GhostButton labels.
 private val GhostButtonIconSize = 16.dp
@@ -71,7 +72,12 @@ private fun rememberPressAlpha(interactionSource: MutableInteractionSource): Flo
 
 /**
  * The primary full-width CTA: filled M3 button on the theme's primary color
- * (dynamic on Android 12+), spring press-scale, expressive loading indicator.
+ * (inverted ink: black in light mode, white in dark), spring press-scale,
+ * expressive loading indicator.
+ *
+ * Pass [colors] to override the default filled treatment (e.g. the home
+ * screen's tonal Receive/Send pair, which matches the history row's arrow
+ * chips instead of using the inverted-ink primary color).
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -81,6 +87,7 @@ fun PrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     loading: Boolean = false,
+    colors: ButtonColors? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val scale = rememberPressScale(interactionSource)
@@ -95,6 +102,7 @@ fun PrimaryButton(
             },
         enabled = enabled && !loading,
         interactionSource = interactionSource,
+        colors = colors ?: ButtonDefaults.buttonColors(),
         contentPadding = PaddingValues(horizontal = CashuTheme.spacing.section, vertical = ButtonContentVertical),
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -106,7 +114,7 @@ fun PrimaryButton(
             } else {
                 Text(
                     text = text,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 )
             }
         }
@@ -136,7 +144,7 @@ fun SecondaryButton(
         interactionSource = interactionSource,
         contentPadding = PaddingValues(horizontal = CashuTheme.spacing.section, vertical = ButtonContentVertical),
     ) {
-        Text(text = text, style = MaterialTheme.typography.labelLarge)
+        Text(text = text, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
     }
 }
 

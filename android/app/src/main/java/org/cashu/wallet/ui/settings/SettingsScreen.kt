@@ -25,7 +25,6 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -49,6 +48,7 @@ import org.cashu.wallet.Core.SettingsManager
 import org.cashu.wallet.Core.WalletManager
 import org.cashu.wallet.ui.components.NavRow
 import org.cashu.wallet.ui.components.SectionHeader
+import org.cashu.wallet.ui.components.TabTopBar
 import org.cashu.wallet.ui.components.ToggleRow
 import org.cashu.wallet.ui.theme.CashuTheme
 
@@ -87,14 +87,7 @@ fun SettingsScreen(
             .consumeWindowInsets(contentPadding)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text("Settings") },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
+            TabTopBar(title = "Settings", scrollBehavior = scrollBehavior)
         },
     ) { padding ->
         LazyColumn(

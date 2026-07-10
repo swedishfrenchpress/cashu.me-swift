@@ -30,8 +30,9 @@ import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
-import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -211,7 +212,9 @@ fun HomeScreen(
                         // Send opens the unified surface directly — no chooser.
                         onSend = onSend,
                         receiveEnabled = walletState.activeMint != null,
-                        sendEnabled = walletState.hasAnyBalance,
+                        // iOS parity: Send is tappable at zero balance; the sheet shows
+                        // "Nothing to send yet" with a Receive CTA instead of disabling here.
+                        sendEnabled = walletState.activeMint != null,
                     )
                 },
                 onScan = onScan,
@@ -383,17 +386,14 @@ private fun PinnedTop(
         verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Top-right scan affordance (iOS parity — scan lives in the top bar, not in the action row).
-        // Default M3 FilledTonalIconButton size is 40dp visual + 48dp touch target via
-        // minimumInteractiveComponentSize. No explicit size needed.
+        // Top-right scan affordance (iOS parity — minimal toolbar glyph, no tonal fill).
+        // 48dp touch target preserved via minimumInteractiveComponentSize.
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-            FilledTonalIconButton(
-                onClick = onScan,
-                shape = CircleShape,
-            ) {
+            IconButton(onClick = onScan) {
                 Icon(
                     imageVector = Icons.Outlined.QrCodeScanner,
                     contentDescription = "Scan QR",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -495,8 +495,17 @@ private fun ActionDuet(
     receiveEnabled: Boolean,
     sendEnabled: Boolean,
 ) {
-    // Twin primary CTAs (iOS parity): Receive and Send carry equal weight on
-    // the home canvas — no filled/tonal hierarchy between them.
+    // Twin CTAs (iOS parity): Receive and Send carry equal weight on the home
+    // canvas — no filled/tonal hierarchy between them. Styled as neutral
+    // tonal pills (same fill/content colors as the history row's arrow
+    // chips) rather than the inverted-ink PrimaryButton default, which reads
+    // as too strong for a pair of equally-weighted actions.
+    val actionColors = ButtonDefaults.buttonColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+    )
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
@@ -507,12 +516,14 @@ private fun ActionDuet(
             onClick = onReceive,
             modifier = Modifier.weight(1f),
             enabled = receiveEnabled,
+            colors = actionColors,
         )
         PrimaryButton(
             text = "Send",
             onClick = onSend,
             modifier = Modifier.weight(1f),
             enabled = sendEnabled,
+            colors = actionColors,
         )
     }
 }

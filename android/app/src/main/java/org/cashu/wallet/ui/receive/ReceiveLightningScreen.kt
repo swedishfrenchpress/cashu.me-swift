@@ -79,6 +79,7 @@ import org.cashu.wallet.Models.MintInfo
 import org.cashu.wallet.Models.MintQuoteInfo
 import org.cashu.wallet.Models.MintQuoteState
 import org.cashu.wallet.Models.PaymentMethodKind
+import org.cashu.wallet.ui.components.AmountEntryHero
 import org.cashu.wallet.ui.components.AmountText
 import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.IconSwap
@@ -251,7 +252,10 @@ fun ReceiveLightningScreen(
                         formatter.formatWalletSats(it.balance, settings.useBitcoinSymbol)
                     },
                     onPickMint = { mintPickerOpen = true },
-                    unitLabel = if (isSatUnit) "sat" else effectiveUnit.uppercase(),
+                    isSat = isSatUnit,
+                    unit = effectiveUnit,
+                    useBitcoinSymbol = settings.useBitcoinSymbol,
+                    formatter = formatter,
                     decimals = currency.decimals,
                     errorText = errorText,
                     onCreate = {
@@ -373,7 +377,10 @@ private fun InputFace(
     mint: MintInfo?,
     mintBalanceText: String?,
     onPickMint: () -> Unit,
-    unitLabel: String,
+    isSat: Boolean,
+    unit: String,
+    useBitcoinSymbol: Boolean,
+    formatter: AmountFormatter,
     decimals: Int,
     errorText: String?,
     onCreate: () -> Unit,
@@ -411,18 +418,13 @@ private fun InputFace(
             )
             Spacer(Modifier.height(CashuTheme.spacing.snug))
         }
-        AmountText(
-            text = when {
-                amount.isNotEmpty() -> amount
-                decimals > 0 -> "0." + "0".repeat(decimals)
-                else -> "0"
-            },
-            style = MaterialTheme.typography.displayMedium.withMonoDigits(),
-        )
-        Text(
-            text = unitLabel,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        AmountEntryHero(
+            entryRaw = amount,
+            isSat = isSat,
+            unit = unit,
+            decimals = decimals,
+            useBitcoinSymbol = useBitcoinSymbol,
+            formatter = formatter,
         )
         if (errorText != null) {
             Spacer(Modifier.height(CashuTheme.spacing.default))
@@ -430,7 +432,7 @@ private fun InputFace(
         }
         Spacer(Modifier.weight(1f))
         NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
-        Spacer(Modifier.height(CashuTheme.spacing.micro))
+        Spacer(Modifier.height(CashuTheme.spacing.page))
         PrimaryButton(
             text = if (creating) "Creating…" else selectedMethod.createActionTitle,
             onClick = onCreate,
