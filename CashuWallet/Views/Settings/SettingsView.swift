@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject var walletManager: WalletManager
     @ObservedObject var settings = SettingsManager.shared
     @ObservedObject var npcService = NPCService.shared
+    @ObservedObject var nwc = NWCManager.shared
 
     @State private var showBackup = false
     @State private var showDeleteConfirm = false
@@ -151,6 +152,42 @@ struct SettingsView: View {
         .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
     }
 
+    /// A `navRow` variant with a trailing status value ("On" / "Off"), matching
+    /// the iOS Settings idiom for toggleable features behind a push.
+    private func navValueRow<Destination: View>(
+        _ title: String,
+        icon: String,
+        value: String,
+        @ViewBuilder destination: () -> Destination
+    ) -> some View {
+        NavigationLink {
+            destination()
+        } label: {
+            HStack(spacing: 14) {
+                SettingsRowIcon(systemName: icon)
+
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 8)
+
+                Text(value)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture().onEnded { HapticFeedback.selection() })
+    }
+
     private func externalLinkRow(_ title: String, icon: String, url: URL) -> some View {
         Link(destination: url) {
             settingsRow(title, icon: icon, showChevron: true, isExternal: true)
@@ -287,7 +324,7 @@ struct SettingsView: View {
     private var nostrDetailView: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                Text("Nostr powers your Lightning address, npub.cash requests, and encrypted backups.")
+                Text("Nostr powers your Lightning address, npub.cash requests, encrypted backups, and Wallet Connect.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -298,6 +335,19 @@ struct SettingsView: View {
 
                 NostrKeysSettingsSection()
                 NostrRelaysSettingsSection()
+
+                SettingsSectionGroup("Apps") {
+                    navValueRow(
+                        "Wallet Connect",
+                        icon: "bolt.horizontal.circle",
+                        value: nwc.isEnabled ? "On" : "Off"
+                    ) {
+                        NWCSettingsView()
+                    }
+                }
+                SettingsSectionFooter {
+                    Text("Let a Nostr app create invoices and pay Lightning invoices from this wallet.")
+                }
                 NostrMintBackupSettingsSection()
             }
             .padding(.horizontal)
