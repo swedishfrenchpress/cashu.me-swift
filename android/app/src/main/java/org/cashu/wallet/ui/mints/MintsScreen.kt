@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -154,6 +153,30 @@ fun MintsScreen(
         topBar = {
             TabTopBar(title = "Mints", scrollBehavior = scrollBehavior)
         },
+        bottomBar = {
+            // Anchored footer so these actions read as the screen's primary
+            // CTA instead of trailing off right under the form fields.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(horizontal = CashuTheme.spacing.comfortable)
+                    .padding(top = CashuTheme.spacing.snug, bottom = CashuTheme.spacing.comfortable),
+                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
+            ) {
+                PrimaryButton(
+                    text = "Add mint",
+                    onClick = ::addMint,
+                    enabled = url.isNotBlank() && !walletState.isLoading,
+                    loading = walletState.isLoading,
+                )
+                GhostButton(
+                    text = "Paste URL from clipboard",
+                    onClick = ::pasteFromClipboard,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -164,18 +187,20 @@ fun MintsScreen(
             if (walletState.mints.isNotEmpty()) {
                 items(walletState.mints, key = { it.url }) { mint ->
                     val isActive = walletState.activeMint?.url == mint.url
-                    SwipeableMintRow(
-                        mint = mint,
-                        isActive = isActive,
-                        onOpen = { onOpenMint(mint) },
-                        onSetActive = {
-                            if (!isActive) {
-                                scope.launch { walletManager.setActiveMint(mint) }
-                            }
-                        },
-                        onRequestRemove = { pendingRemoval = mint },
-                    )
-                    if (mint != walletState.mints.last()) CanvasDivider(leadingInset = 64.dp)
+                    Column(modifier = Modifier.animateItem()) {
+                        SwipeableMintRow(
+                            mint = mint,
+                            isActive = isActive,
+                            onOpen = { onOpenMint(mint) },
+                            onSetActive = {
+                                if (!isActive) {
+                                    scope.launch { walletManager.setActiveMint(mint) }
+                                }
+                            },
+                            onRequestRemove = { pendingRemoval = mint },
+                        )
+                        if (mint != walletState.mints.last()) CanvasDivider(leadingInset = 64.dp)
+                    }
                 }
             }
 
@@ -241,18 +266,6 @@ fun MintsScreen(
                     if (error != null) {
                         InlineNotice(text = error!!)
                     }
-                    PrimaryButton(
-                        text = "Add mint",
-                        onClick = ::addMint,
-                        enabled = url.isNotBlank() && !walletState.isLoading,
-                        loading = walletState.isLoading,
-                    )
-                    GhostButton(
-                        text = "Paste URL from clipboard",
-                        onClick = ::pasteFromClipboard,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(CashuTheme.spacing.snug))
                 }
             }
         }

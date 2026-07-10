@@ -81,7 +81,7 @@ import org.cashu.wallet.ui.components.CashuTextField
 import org.cashu.wallet.ui.components.InlineNotice
 import org.cashu.wallet.ui.components.MintPickerSheet
 import org.cashu.wallet.ui.components.MintSelectorRow
-import org.cashu.wallet.ui.components.NumberPad
+import org.cashu.wallet.ui.components.NumberPadFooter
 import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.SheetHeader
@@ -378,8 +378,8 @@ fun SendEcashScreen(
         MintPickerSheet(
             mints = walletState.mints,
             activeMintUrl = activeMintUrl,
-            onSelect = {
-                selectedMintUrl = it.url
+            onSelect = { mint ->
+                mint?.let { selectedMintUrl = it.url }
                 selectedUnit = null
                 amount = ""
                 nonSatBalance = null
@@ -515,17 +515,15 @@ private fun InputFace(
 
         Spacer(modifier = Modifier.weight(1f, fill = true))
 
-        NumberPad(amount = amount, onAmountChange = onAmountChange, decimals = decimals)
-
-        Spacer(Modifier.height(CashuTheme.spacing.page))
-        PrimaryButton(
-            text = if (sending) "Sending…" else "Send",
-            onClick = onSend,
-            enabled = canSend,
-            loading = sending,
+        NumberPadFooter(
+            amount = amount,
+            onAmountChange = onAmountChange,
+            decimals = decimals,
+            buttonText = if (sending) "Sending…" else "Send",
+            onButtonClick = onSend,
+            buttonEnabled = canSend,
+            buttonLoading = sending,
         )
-        // Idiomatic inset spacer: exactly the navigation-bar height at the bottom.
-        Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
 }
 
