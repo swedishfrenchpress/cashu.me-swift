@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -81,10 +80,9 @@ import org.cashu.wallet.ui.components.GhostButton
 import org.cashu.wallet.ui.components.InlineNoticeHost
 import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.MintPickerSheet
-import org.cashu.wallet.ui.components.NumberPad
+import org.cashu.wallet.ui.components.NumberPadFooter
 import org.cashu.wallet.ui.components.PaymentStatusPhase
 import org.cashu.wallet.ui.components.PaymentStatusScreen
-import org.cashu.wallet.ui.components.PrimaryButton
 import org.cashu.wallet.ui.components.QrCard
 import org.cashu.wallet.ui.components.SecondaryButton
 import org.cashu.wallet.ui.components.SectionHeader
@@ -488,7 +486,6 @@ private fun CashuRequestAmountEditSheet(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .navigationBarsPadding()
                 .imePadding()
                 .padding(horizontal = CashuTheme.spacing.comfortable),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -509,13 +506,13 @@ private fun CashuRequestAmountEditSheet(
                 formatter = formatter,
             )
             Spacer(Modifier.weight(1f))
-            NumberPad(amount = amount, onAmountChange = { amount = it }, decimals = decimals)
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
-            PrimaryButton(
-                text = "Done",
-                onClick = { onDone(UnitAmountEntry.baseUnits(amount, decimals).takeIf { it > 0 }) },
+            NumberPadFooter(
+                amount = amount,
+                onAmountChange = { amount = it },
+                decimals = decimals,
+                buttonText = "Done",
+                onButtonClick = { onDone(UnitAmountEntry.baseUnits(amount, decimals).takeIf { it > 0 }) },
             )
-            Spacer(Modifier.height(CashuTheme.spacing.snug))
         }
     }
 }

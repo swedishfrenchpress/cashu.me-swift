@@ -83,7 +83,7 @@ import org.cashu.wallet.ui.components.InspectorRow
 import org.cashu.wallet.ui.components.MintPickerSheet
 import org.cashu.wallet.ui.components.MintSelectorRow
 import org.cashu.wallet.ui.components.NoticeSeverity
-import org.cashu.wallet.ui.components.NumberPad
+import org.cashu.wallet.ui.components.NumberPadFooter
 import org.cashu.wallet.ui.components.PaymentStatusPhase
 import org.cashu.wallet.ui.components.PaymentStatusScreen
 import org.cashu.wallet.ui.components.PrimaryButton
@@ -782,14 +782,13 @@ private fun AmountFace(
             )
         }
         Spacer(Modifier.weight(1f))
-        NumberPad(amount = amount, onAmountChange = onAmountChange)
-        Spacer(Modifier.height(CashuTheme.spacing.page))
-        PrimaryButton(
-            text = "Continue",
-            onClick = onContinue,
-            enabled = amountValue > 0,
+        NumberPadFooter(
+            amount = amount,
+            onAmountChange = onAmountChange,
+            buttonText = "Continue",
+            onButtonClick = onContinue,
+            buttonEnabled = amountValue > 0,
         )
-        Spacer(Modifier.navigationBarsPadding())
     }
 }
 
