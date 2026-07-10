@@ -126,6 +126,10 @@ extension WalletManager {
     /// Restore wallet from mnemonic - Phase 3: Complete restore and dismiss onboarding
     func completeRestore() async {
         completeOnboarding()
+        // The restored mint list is final now — refresh the Nostr backup with it.
+        // (Must not run earlier: publishing while the repository is still empty
+        // would replace the addressable backup event with an empty list.)
+        Task { await NostrMintBackupService.shared.backupCurrentMintsIfEnabled() }
     }
 
     func completeOnboarding() {
@@ -277,6 +281,7 @@ extension WalletManager {
         
         db = repository.db
         walletRepository = repository.repository
+        NostrMintBackupService.shared.walletRepository = repository.repository
         processedQuotes = Set(walletStore.loadProcessedNPCQuotes())
     }
 
@@ -301,6 +306,7 @@ extension WalletManager {
         }
 
         walletRepository = nil
+        NostrMintBackupService.shared.walletRepository = nil
         db = nil
         mnemonic = nil
         balance = 0
