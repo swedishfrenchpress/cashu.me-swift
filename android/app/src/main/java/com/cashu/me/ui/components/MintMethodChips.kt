@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
@@ -23,7 +24,7 @@ import com.cashu.me.Models.MintInfo
 import com.cashu.me.Models.PaymentMethodKind
 import com.cashu.me.ui.theme.CashuTheme
 
-private val MethodIconSize = 14.dp
+private val MethodIconSize = 20.dp
 
 /**
  * Compact payment-method glyphs for mint rows — icon when known, otherwise a
@@ -65,7 +66,14 @@ private fun MethodGlyph(method: PaymentMethodKind) {
             imageVector = icon,
             contentDescription = method.displayName,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(MethodIconSize),
+            modifier = Modifier
+                .size(MethodIconSize)
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    shape = CircleShape,
+                )
+                .padding(3.dp),
         )
     } else {
         Text(

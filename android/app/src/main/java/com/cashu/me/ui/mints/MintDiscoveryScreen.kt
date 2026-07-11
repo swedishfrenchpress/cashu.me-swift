@@ -42,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -158,7 +159,7 @@ fun MintDiscoveryContent(
                         item(key = "added-header") {
                             DiscoverySectionHeader("Added", modifier = Modifier.animateItem())
                         }
-                        items(addedMints, key = { "added-${it.url}" }) { mint ->
+                        items(addedMints, key = { "mint-${it.url}" }) { mint ->
                             Column(modifier = Modifier.animateItem()) {
                                 DiscoveryRow(
                                     mint = mint,
@@ -175,7 +176,7 @@ fun MintDiscoveryContent(
                         item(key = "discovered-header") {
                             DiscoverySectionHeader("Discovered", modifier = Modifier.animateItem())
                         }
-                        items(discoverableMints, key = { "discovered-${it.url}" }) { mint ->
+                        items(discoverableMints, key = { "mint-${it.url}" }) { mint ->
                             Column(modifier = Modifier.animateItem()) {
                                 DiscoveryRow(
                                     mint = mint,
@@ -208,9 +209,10 @@ private fun DiscoveryRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .alpha(if (state == DiscoveryRowState.Added) 0.7f else 1f)
             .padding(
                 horizontal = CashuTheme.spacing.comfortable,
-                vertical = CashuTheme.spacing.default,
+                vertical = CashuTheme.spacing.comfortable,
             ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.default),
@@ -245,6 +247,8 @@ private fun DiscoveryRow(
         // arrival (iOS .symbolEffect(.bounce, value: added) parity).
         AnimatedContent(
             targetState = state,
+            modifier = Modifier.size(48.dp),
+            contentAlignment = Alignment.Center,
             transitionSpec = {
                 (
                     fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
@@ -265,7 +269,7 @@ private fun DiscoveryRow(
                     Icon(
                         imageVector = Icons.Outlined.CheckCircle,
                         contentDescription = "Added",
-                        tint = CashuTheme.colors.received,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .size(28.dp)
                             .graphicsLayer {

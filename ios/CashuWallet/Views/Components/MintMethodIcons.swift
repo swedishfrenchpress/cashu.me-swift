@@ -24,8 +24,13 @@ private struct MethodGlyph: View {
     var body: some View {
         if let symbol = method.rowSymbol {
             Image(systemName: symbol)
-                .font(.caption.weight(.semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .overlay {
+                    Circle()
+                        .strokeBorder(.tertiary, lineWidth: 1)
+                }
                 .accessibilityHidden(true)
         } else {
             Text(method.displayName)

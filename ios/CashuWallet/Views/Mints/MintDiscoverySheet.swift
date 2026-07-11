@@ -44,13 +44,16 @@ struct MintDiscoverySheet: View {
         } else {
             List {
                 if discoveryManager.isDiscovering || !loadingPreviewURLs.isEmpty {
-                    Section {
-                        HStack(spacing: 12) {
-                            ProgressView()
-                            Text("Discovering mints…")
-                                .foregroundStyle(.secondary)
-                        }
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Discovering mints…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .accessibilityElement(children: .combine)
                 }
 
                 if !addedMints.isEmpty {
