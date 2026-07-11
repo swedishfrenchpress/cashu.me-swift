@@ -28,8 +28,12 @@ extension View {
     /// Full-width Liquid Glass capsule. Used for all primary CTAs in the app.
     /// Matches the home-screen action row (Receive / Scan / Send) — neutral
     /// glass with a primary-color label, readable in both light and dark mode.
-    func glassButton() -> some View {
-        self.buttonStyle(FullWidthCapsuleButtonStyle())
+    ///
+    /// Pass `prominent: true` for the inverted-ink fill (black in light / white
+    /// in dark) used by the enabled primary action — matches Android
+    /// `PrimaryButton`.
+    func glassButton(prominent: Bool = false) -> some View {
+        self.buttonStyle(FullWidthCapsuleButtonStyle(prominent: prominent))
     }
 
     /// Canonical borderless text-link button for tertiary actions
@@ -228,7 +232,12 @@ struct SettingsSectionFooter<Content: View>: View {
 /// with a `.quaternary` fill fallback on iOS 18–25. The 15% primary-color
 /// tint keeps the surface visible even when sitting over an empty dark
 /// canvas (where untinted `.regular` glass would nearly disappear).
+///
+/// `prominent` swaps to inverted ink — solid `Color.primary` fill with
+/// system-background label — for the single active primary CTA (Android
+/// `PrimaryButton` parity).
 struct FullWidthCapsuleButtonStyle: ButtonStyle {
+    var prominent: Bool = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
@@ -236,11 +245,15 @@ struct FullWidthCapsuleButtonStyle: ButtonStyle {
             .font(.body.weight(.semibold))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
-            .foregroundStyle(.primary)
+            .foregroundStyle(prominent ? Color(.systemBackground) : Color.primary)
             .contentShape(Capsule())
 
         return Group {
-            if #available(iOS 26, *) {
+            if prominent {
+                label
+                    .background(Color.primary, in: Capsule())
+                    .scaleEffect(isEnabled && configuration.isPressed ? 0.97 : 1)
+            } else if #available(iOS 26, *) {
                 label.glassEffect(
                     .regular.tint(Color.primary.opacity(0.15)).interactive(),
                     in: Capsule()

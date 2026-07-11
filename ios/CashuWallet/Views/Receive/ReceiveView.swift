@@ -184,55 +184,63 @@ struct ReceiveEcashView: View {
     @ViewBuilder
     private var formContent: some View {
         VStack(spacing: 16) {
-                ZStack(alignment: .bottomTrailing) {
-                    ZStack(alignment: .topLeading) {
-                        // TokenTextEditor (not TextEditor): cashuA base64url uses
-                        // "-" which word-wrap treats as a break, leaving short
-                        // jagged lines. Android fills each line edge-to-edge.
-                        TokenTextEditor(text: $tokenInput)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 12)
-                            .accessibilityLabel("Ecash token input")
-                            .accessibilityHint("Enter or paste a cashu ecash token")
+                GeometryReader { geo in
+                    ZStack(alignment: .bottomTrailing) {
+                        ZStack(alignment: .topLeading) {
+                            // TokenTextEditor (not TextEditor): cashuA base64url uses
+                            // "-" which word-wrap treats as a break, leaving short
+                            // jagged lines. Android fills each line edge-to-edge.
+                            TokenTextEditor(text: $tokenInput)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 12)
+                                .accessibilityLabel("Ecash token input")
+                                .accessibilityHint("Enter or paste a cashu ecash token")
 
-                        if tokenInput.isEmpty {
-                            Text("cashuB…")
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                                .padding(.horizontal, 17)
-                                .padding(.vertical, 20)
-                                .allowsHitTesting(false)
+                            if tokenInput.isEmpty {
+                                Text("cashuB…")
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.horizontal, 17)
+                                    .padding(.vertical, 20)
+                                    .allowsHitTesting(false)
+                            }
                         }
-                    }
-                    .mask(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .black, location: 0),
-                                .init(color: .black, location: 0.55),
-                                .init(color: .black.opacity(0.85), location: 0.72),
-                                .init(color: .black.opacity(0.35), location: 0.88),
-                                .init(color: .clear, location: 1.0),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
+                        // Longer/stronger fade matching Android ReceiveEcashScreen:
+                        // opaque through ~35%, then dissolve so the clear control
+                        // sits on solid fill.
+                        .mask(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .black, location: 0),
+                                    .init(color: .black, location: 0.35),
+                                    .init(color: .black.opacity(0.65), location: 0.55),
+                                    .init(color: .black.opacity(0.15), location: 0.75),
+                                    .init(color: .clear, location: 1.0),
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         )
-                    )
 
-                    // Smart corner icon: paste when empty, clear when full.
-                    // Plain SF Symbol (no circle bg) so we don't stack a
-                    // gray dot on the gray text field. Sits outside the fade
-                    // mask so it stays fully opaque over dissolving text.
-                    Button(action: tokenInput.isEmpty ? pasteFromClipboard : clearInput) {
-                        Image(systemName: tokenInput.isEmpty ? "doc.on.clipboard" : "xmark.circle.fill")
-                            .font(.title3.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .padding(14)
-                            .contentShape(Rectangle())
+                        // Smart corner icon: paste when empty, clear when full.
+                        // Plain SF Symbol (no circle bg) so we don't stack a
+                        // gray dot on the gray text field. Sits outside the fade
+                        // mask so it stays fully opaque over dissolving text.
+                        Button(action: tokenInput.isEmpty ? pasteFromClipboard : clearInput) {
+                            Image(systemName: tokenInput.isEmpty ? "doc.on.clipboard" : "xmark.circle.fill")
+                                .font(.title3.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .padding(14)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(tokenInput.isEmpty ? "Paste from clipboard" : "Clear")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tokenInput.isEmpty ? "Paste from clipboard" : "Clear")
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    // ~15% shorter than the flexible remainder the VStack offers.
+                    .frame(width: geo.size.width, height: geo.size.height * 0.85)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
                 .frame(maxHeight: .infinity)
                 .padding(.horizontal)
                 .padding(.top, 12)
@@ -247,7 +255,9 @@ struct ReceiveEcashView: View {
                     Button(action: validateAndContinue) {
                         Text("Continue")
                     }
-                    .glassButton()
+                    // Prominent when a token is present (enabled); dimmed fill
+                    // while empty — matches Android PrimaryButton inverted ink.
+                    .glassButton(prominent: true)
                     .disabled(tokenInput.isEmpty)
                     .accessibilityHint("Validates the token and proceeds to details")
 
