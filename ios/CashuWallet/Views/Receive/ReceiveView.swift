@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ReceiveView: View {
     @Environment(\.dismiss) private var dismiss
@@ -183,53 +184,63 @@ struct ReceiveEcashView: View {
     @ViewBuilder
     private var formContent: some View {
         VStack(spacing: 16) {
-                ZStack(alignment: .bottomTrailing) {
-                    ZStack(alignment: .topLeading) {
-                        TextEditor(text: $tokenInput)
-                            .font(.system(.body, design: .monospaced))
-                            .scrollContentBackground(.hidden)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 12)
-                            .accessibilityLabel("Ecash token input")
-                            .accessibilityHint("Enter or paste a cashu ecash token")
+                GeometryReader { geo in
+                    ZStack(alignment: .bottomTrailing) {
+                        ZStack(alignment: .topLeading) {
+                            // TokenTextEditor (not TextEditor): cashuA base64url uses
+                            // "-" which word-wrap treats as a break, leaving short
+                            // jagged lines. Android fills each line edge-to-edge.
+                            TokenTextEditor(text: $tokenInput)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 12)
+                                .accessibilityLabel("Ecash token input")
+                                .accessibilityHint("Enter or paste a cashu ecash token")
 
-                        if tokenInput.isEmpty {
-                            Text("cashuB…")
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                                .padding(.horizontal, 17)
-                                .padding(.vertical, 20)
-                                .allowsHitTesting(false)
+                            if tokenInput.isEmpty {
+                                Text("cashuB…")
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.horizontal, 17)
+                                    .padding(.vertical, 20)
+                                    .allowsHitTesting(false)
+                            }
                         }
-                    }
-                    .mask(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .black, location: 0),
-                                .init(color: .black, location: 0.55),
-                                .init(color: .black.opacity(0.85), location: 0.72),
-                                .init(color: .black.opacity(0.35), location: 0.88),
-                                .init(color: .clear, location: 1.0),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
+                        // Longer/stronger fade matching Android ReceiveEcashScreen:
+                        // opaque through ~35%, then dissolve so the clear control
+                        // sits on solid fill.
+                        .mask(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .black, location: 0),
+                                    .init(color: .black, location: 0.35),
+                                    .init(color: .black.opacity(0.65), location: 0.55),
+                                    .init(color: .black.opacity(0.15), location: 0.75),
+                                    .init(color: .clear, location: 1.0),
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         )
-                    )
 
-                    // Smart corner icon: paste when empty, clear when full.
-                    // Plain SF Symbol (no circle bg) so we don't stack a
-                    // gray dot on the gray text field.
-                    Button(action: tokenInput.isEmpty ? pasteFromClipboard : clearInput) {
-                        Image(systemName: tokenInput.isEmpty ? "doc.on.clipboard" : "xmark.circle.fill")
-                            .font(.title3.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .padding(14)
-                            .contentShape(Rectangle())
+                        // Smart corner icon: paste when empty, clear when full.
+                        // Plain SF Symbol (no circle bg) so we don't stack a
+                        // gray dot on the gray text field. Sits outside the fade
+                        // mask so it stays fully opaque over dissolving text.
+                        Button(action: tokenInput.isEmpty ? pasteFromClipboard : clearInput) {
+                            Image(systemName: tokenInput.isEmpty ? "doc.on.clipboard" : "xmark.circle.fill")
+                                .font(.title3.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .padding(14)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(tokenInput.isEmpty ? "Paste from clipboard" : "Clear")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tokenInput.isEmpty ? "Paste from clipboard" : "Clear")
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    // ~15% shorter than the flexible remainder the VStack offers.
+                    .frame(width: geo.size.width, height: geo.size.height * 0.85)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
                 .frame(maxHeight: .infinity)
                 .padding(.horizontal)
                 .padding(.top, 12)
@@ -244,7 +255,9 @@ struct ReceiveEcashView: View {
                     Button(action: validateAndContinue) {
                         Text("Continue")
                     }
-                    .glassButton()
+                    // Prominent when a token is present (enabled); dimmed fill
+                    // while empty — matches Android PrimaryButton inverted ink.
+                    .glassButton(prominent: true)
                     .disabled(tokenInput.isEmpty)
                     .accessibilityHint("Validates the token and proceeds to details")
 
@@ -364,6 +377,109 @@ struct ReceiveEcashView: View {
             navigateToDetail = true
         } else {
             errorMessage = "Invalid token format. Token should start with 'cashu'"
+        }
+    }
+}
+
+/// Monospaced token paste field. `TextEditor` word-wraps at ASCII `-`
+/// (common in cashuA base64url), which fragments the token into short lines.
+/// Android fills each line edge-to-edge; we match that by displaying `-` as
+/// non-breaking hyphens while keeping ASCII `-` in the bound string.
+private struct TokenTextEditor: UIViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.delegate = context.coordinator
+        textView.backgroundColor = .clear
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.textContainer.lineBreakMode = .byCharWrapping
+        textView.adjustsFontForContentSizeCategory = true
+        textView.autocorrectionType = .no
+        textView.autocapitalizationType = .none
+        textView.smartDashesType = .no
+        textView.smartQuotesType = .no
+        textView.smartInsertDeleteType = .no
+        textView.spellCheckingType = .no
+        textView.keyboardType = .asciiCapable
+        textView.tintColor = .label
+        textView.typingAttributes = Self.typingAttributes()
+        textView.attributedText = Self.displayString(for: text)
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        textView.typingAttributes = Self.typingAttributes()
+        textView.textContainer.lineBreakMode = .byCharWrapping
+        let display = Self.displayString(for: text)
+        if textView.attributedText?.string != display.string {
+            let selected = textView.selectedRange
+            textView.attributedText = display
+            let maxLength = (textView.text as NSString).length
+            if NSMaxRange(selected) <= maxLength {
+                textView.selectedRange = selected
+            }
+        }
+    }
+
+    /// U+2011 NON-BREAKING HYPHEN — same glyph as `-`, not a line-break opportunity.
+    private static let nonBreakingHyphen = "\u{2011}"
+
+    private static func monoBodyFont() -> UIFont {
+        let body = UIFont.preferredFont(forTextStyle: .body)
+        let mono = UIFont.monospacedSystemFont(ofSize: body.pointSize, weight: .regular)
+        return UIFontMetrics(forTextStyle: .body).scaledFont(for: mono)
+    }
+
+    private static func typingAttributes() -> [NSAttributedString.Key: Any] {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byCharWrapping
+        style.hyphenationFactor = 0
+        return [
+            .font: monoBodyFont(),
+            .foregroundColor: UIColor.label,
+            .paragraphStyle: style,
+        ]
+    }
+
+    private static func displayString(for raw: String) -> NSAttributedString {
+        let display = raw.replacingOccurrences(of: "-", with: nonBreakingHyphen)
+        return NSAttributedString(string: display, attributes: typingAttributes())
+    }
+
+    private static func storageString(from display: String) -> String {
+        display.replacingOccurrences(of: nonBreakingHyphen, with: "-")
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: TokenTextEditor
+
+        init(_ parent: TokenTextEditor) {
+            self.parent = parent
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            let display = textView.text ?? ""
+            let storage = TokenTextEditor.storageString(from: display)
+            if parent.text != storage {
+                parent.text = storage
+            }
+            // Keep typed ASCII hyphens non-breaking without fighting the cursor.
+            let normalized = display.replacingOccurrences(of: "-", with: TokenTextEditor.nonBreakingHyphen)
+            if display != normalized {
+                let selected = textView.selectedRange
+                textView.attributedText = TokenTextEditor.displayString(
+                    for: TokenTextEditor.storageString(from: normalized)
+                )
+                textView.typingAttributes = TokenTextEditor.typingAttributes()
+                let maxLength = (textView.text as NSString).length
+                if NSMaxRange(selected) <= maxLength {
+                    textView.selectedRange = selected
+                }
+            }
         }
     }
 }

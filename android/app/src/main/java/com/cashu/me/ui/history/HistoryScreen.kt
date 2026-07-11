@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.outlined.Check
@@ -58,10 +60,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.CashuRequestStore
@@ -81,6 +88,7 @@ import com.cashu.me.ui.components.EmptyState
 import com.cashu.me.ui.components.IconSwap
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.TabTopBar
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.TransactionRow
 import com.cashu.me.ui.components.TransactionRowModel
 import com.cashu.me.ui.components.formatRelativeTimestamp
@@ -111,6 +119,8 @@ fun HistoryScreen(
     var query by remember { mutableStateOf("") }
     var refreshing by remember { mutableStateOf(false) }
     var requestPendingDelete by remember { mutableStateOf<CashuRequest?>(null) }
+    val searchFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(Unit) {
         walletManager.loadTransactions()
@@ -146,8 +156,23 @@ fun HistoryScreen(
                 title = "History",
                 scrollBehavior = scrollBehavior,
                 actions = {
-                    IconButton(onClick = { searching = !searching }) {
-                        Icon(Icons.Outlined.Search, contentDescription = "Search")
+                    // Toggle search — same as iOS History toolbar Search
+                    // (press again to hide; clears query on dismiss).
+                    IconButton(
+                        onClick = {
+                            if (searching) {
+                                searching = false
+                                query = ""
+                                keyboardController?.hide()
+                            } else {
+                                searching = true
+                            }
+                        },
+                    ) {
+                        ToolbarIcon(
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = if (searching) "Hide search" else "Search history",
+                        )
                     }
                     Box {
                         IconButton(onClick = { filterMenuOpen = true }) {
@@ -156,6 +181,7 @@ fun HistoryScreen(
                                 icon = if (filter == HistoryFilter.All)
                                     Icons.Outlined.FilterList else Icons.Filled.FilterList,
                                 contentDescription = "Filter",
+                                iconSize = CashuTheme.iconSizes.toolbar,
                             )
                         }
                         DropdownMenu(
@@ -204,7 +230,7 @@ fun HistoryScreen(
         ) {
             // The search field lives outside the list so it survives an
             // empty result set (searching to zero matches must not unmount
-            // the field mid-typing) — iOS .searchable parity.
+            // the field mid-typing) — iOS History search toggle parity.
             Column(modifier = Modifier.fillMaxSize()) {
                 AnimatedVisibility(
                     visible = searching,
@@ -219,9 +245,21 @@ fun HistoryScreen(
                             .padding(
                                 horizontal = CashuTheme.spacing.comfortable,
                                 vertical = CashuTheme.spacing.snug,
-                            ),
+                            )
+                            .focusRequester(searchFocusRequester),
                         placeholder = "Search history",
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = { keyboardController?.hide() },
+                        ),
                     )
+                    // Focus + keyboard once the field is attached after the
+                    // enter animation starts (iOS .searchFocused parity).
+                    LaunchedEffect(Unit) {
+                        delay(50)
+                        searchFocusRequester.requestFocus()
+                        keyboardController?.show()
+                    }
                 }
                 if (sections.isEmpty()) {
                     HistoryEmptyState(
@@ -242,7 +280,14 @@ fun HistoryScreen(
                             listState.animateScrollToItem(0)
                         }
                     }
-                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            top = CashuTheme.spacing.snug,
+                            bottom = CashuTheme.spacing.section,
+                        ),
+                    ) {
                         sections.forEach { section ->
                             item(key = "header-${section.title}") {
                                 SectionHeader(section.title.uppercase())

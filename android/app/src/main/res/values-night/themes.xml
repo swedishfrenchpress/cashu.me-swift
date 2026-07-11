@@ -1,7 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+      Launch theme (night): black canvas matching Compose LoadingScreen, no circular app icon.
+    -->
+    <style name="Theme.CashuWallet.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/cashu_canvas</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_empty</item>
+        <item name="postSplashScreenTheme">@style/Theme.CashuWallet</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
     <!-- Minimal host theme: Compose owns all styling; enableEdgeToEdge() owns the bars. -->
     <style name="Theme.CashuWallet" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/cashu_canvas</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

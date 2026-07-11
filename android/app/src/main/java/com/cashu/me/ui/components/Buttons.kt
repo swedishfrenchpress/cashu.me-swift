@@ -34,13 +34,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.cashu.me.ui.theme.CashuTheme
 
-// 58dp min height with 16dp vertical padding matches iOS's large glass capsule buttons.
-private val ButtonMinHeight = 58.dp
-private val ButtonContentVertical = 16.dp
+// Full-width CTAs (incl. home Receive/Send). +10% over the original 58/16
+// iOS-large glass capsule sizing for a taller Android press target.
+private val ButtonMinHeight = 64.dp
+private val ButtonContentVertical = 18.dp
 private val ButtonProgressSize = 24.dp
 // Chevron-scale glyph inside GhostButton labels.
 private val GhostButtonIconSize = 16.dp
@@ -126,7 +129,10 @@ fun PrimaryButton(
                 ) { current ->
                     Text(
                         text = current,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 18.sp,
+                        ),
                     )
                 }
             }
@@ -157,7 +163,13 @@ fun SecondaryButton(
         interactionSource = interactionSource,
         contentPadding = PaddingValues(horizontal = CashuTheme.spacing.section, vertical = ButtonContentVertical),
     ) {
-        Text(text = text, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+            ),
+        )
     }
 }
 
@@ -169,6 +181,7 @@ fun GhostButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     trailingIcon: ImageVector? = null,
+    textStyle: TextStyle = MaterialTheme.typography.labelLarge,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val alpha = rememberPressAlpha(interactionSource)
@@ -178,7 +191,7 @@ fun GhostButton(
         enabled = enabled,
         interactionSource = interactionSource,
     ) {
-        Text(text = text, style = MaterialTheme.typography.labelLarge)
+        Text(text = text, style = textStyle)
         if (trailingIcon != null) {
             Spacer(Modifier.width(CashuTheme.spacing.micro))
             Icon(

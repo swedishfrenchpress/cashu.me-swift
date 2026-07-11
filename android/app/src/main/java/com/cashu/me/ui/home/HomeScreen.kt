@@ -32,7 +32,6 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -78,6 +77,7 @@ import com.cashu.me.ui.components.PrimaryButton
 import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.TransactionRow
 import com.cashu.me.ui.components.TransactionRowModel
+import com.cashu.me.ui.components.ToolbarIcon
 import com.cashu.me.ui.components.formatRelativeTimestamp
 import com.cashu.me.ui.theme.CashuTheme
 
@@ -252,7 +252,7 @@ fun HomeScreen(
                         }
                     },
                 contentPadding = PaddingValues(
-                    top = pinnedTopDp,
+                    top = pinnedTopDp + CashuTheme.spacing.snug,
                     bottom = CashuTheme.spacing.section,
                 ),
             ) {
@@ -332,6 +332,7 @@ fun HomeScreen(
                                 text = "View all activity",
                                 onClick = onOpenHistory,
                                 trailingIcon = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                                textStyle = MaterialTheme.typography.bodyLarge,
                             )
                         }
                     }
@@ -394,30 +395,33 @@ private fun PinnedTop(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             IconButton(onClick = onOpenSettings) {
-                Icon(
+                ToolbarIcon(
                     imageVector = Icons.Outlined.Settings,
                     contentDescription = "Settings",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             IconButton(onClick = onScan) {
-                Icon(
+                ToolbarIcon(
                     imageVector = Icons.Outlined.QrCodeScanner,
                     contentDescription = "Scan QR",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        // Mint chip centered above the balance.
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            mintChip()
+        // Mint chip + balance + Receive/Send — tighter vertical rhythm than the
+        // older ~28dp gaps so the hero block reads as one unit under the nav row.
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                mintChip()
+            }
+            balance()
+            triptych()
         }
-        // Spacing.spacedBy(12) above + micro spacer + spacing.spacedBy(12) below =
-        // ~28dp between mint→balance and balance→triptych (iOS-matched).
-        Spacer(Modifier.height(CashuTheme.spacing.micro))
-        balance()
-        Spacer(Modifier.height(CashuTheme.spacing.micro))
-        triptych()
     }
 }
 
