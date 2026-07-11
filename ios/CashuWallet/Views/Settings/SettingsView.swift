@@ -2,6 +2,7 @@ import SwiftUI
 import LocalAuthentication
 
 struct SettingsView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: WalletManager
     @ObservedObject var settings = SettingsManager.shared
     @ObservedObject var npcService = NPCService.shared
@@ -91,6 +92,18 @@ struct SettingsView: View {
             .padding(.horizontal)
         }
         .navigationTitle("Settings")
+        .navigationBarBackButtonHidden()
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Label("Wallet", systemImage: "chevron.backward")
+                }
+                .accessibilityLabel("Back to Wallet")
+                .accessibilityIdentifier("settings-back-button")
+            }
+        }
         .sheet(isPresented: $showBackup) {
             BackupView()
                 .environmentObject(walletManager)

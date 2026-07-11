@@ -33,14 +33,18 @@ final class SettingsUITests: UITestBase {
         navigateToSettings()
 
         XCTAssertTrue(app.navigationBars["Settings"].exists)
-        XCTAssertFalse(app.tabBars.firstMatch.exists)
+        let tabBar = mainTabBar(timeout: 5)
+        XCTAssertEqual(tabBar.buttons.count, 3)
+        XCTAssertFalse(tabBar.buttons["Settings"].exists)
     }
 
     func testCanReturnToWalletFromSettings() throws {
         navigateToSettings()
 
-        app.navigationBars["Settings"].buttons.firstMatch.tap()
+        let back = app.buttons["settings-back-button"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.tap()
         XCTAssertTrue(app.buttons["wallet-settings-button"].waitForExistence(timeout: 5))
-        XCTAssertTrue(tabButton("Wallet").isSelected)
+        waitForSelectedTab("Wallet")
     }
 }

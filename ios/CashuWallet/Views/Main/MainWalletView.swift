@@ -85,7 +85,6 @@ struct MainWalletView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     NavigationLink {
                         SettingsView()
-                            .toolbar(.hidden, for: .tabBar)
                     } label: {
                         Image(systemName: "gearshape")
                             .font(.body.weight(.semibold))
