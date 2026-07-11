@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cancel
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.QrCodeScanner
@@ -43,11 +42,11 @@ import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.ui.components.CashuTextField
 import com.cashu.me.ui.components.CircularMethodButton
+import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.components.GhostButton
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.MethodRowSpacing
 import com.cashu.me.ui.components.NoticeSeverity
-import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.send.SendDestinationResolution
 import com.cashu.me.ui.send.resolveSendDestination
 import com.cashu.me.ui.theme.CashuTheme
@@ -163,12 +162,9 @@ fun ReceiveEcashScreen(
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        SheetHeader(
-            title = "Receive",
-            navigationIcon = Icons.Outlined.Close,
-            navigationContentDescription = "Close",
-            onNavigationClick = onClose,
-        )
+        // Handle-less sheet chrome matching the updated Send input step: a big
+        // left-aligned title, no drag-handle (from WalletFlowSheetHost) and no X.
+        FlowSheetTitle(title = "Receive")
         // Wrap-content — the sheet settles just below Scan · Ecash · Bitcoin
         // (thumb-reachable), matching iOS's content-fit detent and the Send face.
         Column(
@@ -180,7 +176,6 @@ fun ReceiveEcashScreen(
                 .imePadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(CashuTheme.spacing.default))
             CashuTextField(
                 value = input,
                 onValueChange = {
