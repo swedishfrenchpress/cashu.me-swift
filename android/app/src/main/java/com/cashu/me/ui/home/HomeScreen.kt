@@ -53,6 +53,7 @@ import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import com.cashu.me.Core.AmountDisplayPrimary
+import com.cashu.me.Core.AmountDisplayText
 import com.cashu.me.Core.AmountFormatter
 import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.HomeBalance
@@ -65,7 +66,6 @@ import com.cashu.me.Core.WalletManager
 import com.cashu.me.Core.displayText
 import com.cashu.me.Models.CashuRequest
 import com.cashu.me.Models.WalletTransaction
-import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.BalanceDisplay
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.CashuRequestRow
@@ -178,16 +178,6 @@ fun HomeScreen(
                     )
                 },
                 balance = {
-                    val satHero: @Composable () -> Unit = {
-                        BalanceDisplay(
-                            amount = balanceDisplay,
-                            // iOS: tapping the hero toggles the ₿ symbol vs "sat".
-                            onTogglePrimary = {
-                                settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
-                            },
-                            receivedDelta = receivedDelta,
-                        )
-                    }
                     // Multi-unit pager carve-out: one hero number at a time, only
                     // when the active mint is multi-unit AND non-sat balance is held.
                     val showsPager = HomeBalance.showsUnitPager(
@@ -197,12 +187,23 @@ fun HomeScreen(
                     if (showsPager) {
                         UnitBalancePager(
                             balancesByUnit = walletState.balancesByUnit,
+                            satAmount = balanceDisplay,
                             persistedUnit = settings.homeBalanceUnit,
                             onUnitSelected = settingsManager::setHomeBalanceUnit,
-                            satHero = satHero,
+                            onToggleSatSymbol = {
+                                settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
+                            },
+                            receivedDelta = receivedDelta,
                         )
                     } else {
-                        satHero()
+                        BalanceDisplay(
+                            amount = balanceDisplay,
+                            // iOS: tapping the hero toggles the ₿ symbol vs "sat".
+                            onTogglePrimary = {
+                                settingsManager.setUseBitcoinSymbol(!settings.useBitcoinSymbol)
+                            },
+                            receivedDelta = receivedDelta,
+                        )
                     }
                 },
                 triptych = {
@@ -427,17 +428,20 @@ private fun PinnedTop(
 
 /**
  * Home balance unit pager (iOS MainWalletView.unitBalanceHero). Page order is
- * sat first then held non-sat units sorted; the sat page keeps the ₿/fiat
- * toggle; non-sat pages render in their own currency with no fiat conversion
- * (eur is already fiat). Selection persists and clamps back to sat when the
- * unit no longer holds balance.
+ * sat first then held non-sat units sorted; every page is the same
+ * [BalanceDisplay] hero. Sat keeps the ₿/fiat toggle + secondary/delta line;
+ * non-sat pages show their own currency with no fiat conversion (eur is already
+ * fiat). Selection persists and clamps back to sat when the unit no longer
+ * holds balance.
  */
 @Composable
 private fun UnitBalancePager(
     balancesByUnit: Map<String, Long>,
+    satAmount: AmountDisplayText,
     persistedUnit: String,
     onUnitSelected: (String) -> Unit,
-    satHero: @Composable () -> Unit,
+    onToggleSatSymbol: () -> Unit,
+    receivedDelta: String?,
 ) {
     val units = HomeBalance.homeBalanceUnits(balancesByUnit)
     val resolvedUnit = HomeBalance.resolvedUnit(persistedUnit, units)
@@ -455,22 +459,35 @@ private fun UnitBalancePager(
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxWidth(),
+            // Measure every page so height stays the max across units; default
+            // verticalAlignment centers shorter pages in that height.
+            beyondViewportPageCount = (units.size - 1).coerceAtLeast(0),
             key = { units[it] },
         ) { page ->
             val unit = units[page]
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                if (unit.equals("sat", ignoreCase = true)) {
-                    satHero()
+            val isSat = unit.equals("sat", ignoreCase = true)
+            BalanceDisplay(
+                amount = if (isSat) {
+                    satAmount
                 } else {
-                    AmountText(
-                        text = CurrencyAmount(
+                    AmountDisplayText(
+                        primary = CurrencyAmount(
                             balancesByUnit[unit] ?: 0L,
                             CurrencyRegistry.currencyForMintUnit(unit),
                         ).formatted(),
-                        style = MaterialTheme.typography.displayMedium,
+                        secondary = null,
+                        effectivePrimary = AmountDisplayPrimary.Sats,
                     )
-                }
-            }
+                },
+                // iOS: tapping the sat hero toggles the ₿ symbol vs "sat".
+                onTogglePrimary = if (isSat) {
+                    { onToggleSatSymbol() }
+                } else {
+                    null
+                },
+                receivedDelta = if (isSat) receivedDelta else null,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
         Spacer(Modifier.height(CashuTheme.spacing.snug))
         Row(horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight)) {
