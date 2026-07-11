@@ -31,11 +31,13 @@ struct MainWalletView: View {
 
     private let recentRowCap = 5
     private let scrollFadeBand: CGFloat = 24
-    /// Fixed height for the multi-unit balance *content* (hero only). Page dots
-    /// sit outside with Android-matching snug spacing — not the system
-    /// UIPageControl, which pads far more vertically.
+    /// Fixed hero height (primary + status). Same whether single-unit or pager.
     private let heroPagerHeight: CGFloat = 80
+    /// Reserved status-line slot under the primary amount.
+    private let statusLineHeight: CGFloat = 22
     private let pageDotSize: CGFloat = 6
+    /// Gap between hero and dots — always reserved with the dots slot.
+    private let pageDotGap: CGFloat = 2
 
     /// Units the home hero can page through: sat, then each held non-sat unit.
     private var homeUnits: [String] {
@@ -204,34 +206,35 @@ struct MainWalletView: View {
         VStack(spacing: 0) {
             mintChip
 
-            Group {
-                let units = homeUnits
-                if !showsUnitPager {
-                    // Single-unit default mint, or no non-sat balance held: the
-                    // single hero, unchanged.
-                    unitBalanceHero("sat")
-                } else {
-                    // Multi-unit: a swipeable pager, one unit's balance per page
-                    // (Apple Wallet-card idiom). Carve-out to the retired
-                    // home mint-card swiper — this is a single-hero *unit*
-                    // switcher, canvas stays bare. See DESIGN.md.
-                    // Custom dots (not UIPageControl) so vertical margin stays
-                    // tight — tighter than Android's snug 8pt; system page
-                    // control pads far more.
-                    VStack(spacing: 2) {
+            // Fixed footprint: hero + (gap + dots) always, whether the active
+            // mint is single-unit or multi-unit — switching mints must not shove
+            // Receive/Send / Recent up or down.
+            VStack(spacing: pageDotGap) {
+                Group {
+                    let units = homeUnits
+                    if !showsUnitPager {
+                        unitBalanceHero("sat")
+                    } else {
+                        // Multi-unit: swipeable pager, one unit per page.
+                        // Custom dots (not UIPageControl) for tight vertical margin.
                         TabView(selection: selectedHomeUnit) {
                             ForEach(units, id: \.self) { unit in
                                 unitBalanceHero(unit)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                                     .tag(unit)
                             }
                         }
                         .tabViewStyle(.page(indexDisplayMode: .never))
-                        .frame(height: heroPagerHeight)
-
-                        unitPagerDots(units)
                     }
                 }
+                .frame(height: heroPagerHeight)
+
+                ZStack {
+                    if showsUnitPager {
+                        unitPagerDots(homeUnits)
+                    }
+                }
+                .frame(height: pageDotSize)
             }
             .padding(.top, 18)
         }
@@ -239,8 +242,8 @@ struct MainWalletView: View {
 
     /// One unit's balance hero. Sat keeps the ₿/sat tap-toggle + fiat/received
     /// sub-line; other units render their amount directly in that currency
-    /// (no fiat conversion — eur is already fiat) with a reserved sub-line slot
-    /// so every page is the same height and the page dots don't jump.
+    /// (no fiat conversion — eur is already fiat). Status-line slot is always
+    /// reserved so pages and single-unit mode share one height.
     @ViewBuilder
     private func unitBalanceHero(_ unit: String) -> some View {
         VStack(spacing: 6) {
@@ -285,15 +288,14 @@ struct MainWalletView: View {
                     .contentTransition(.numericText(value: Double(amount)))
                     .animation(.snappy, value: amount)
                     .accessibilityLabel("Balance: \(formatted)")
-                // Reserve the sub-line height so pages match the sat page.
-                Color.clear.frame(height: 22)
+                // Same reserved status slot as sat (no fiat conversion for non-sat).
+                Color.clear.frame(height: statusLineHeight)
             }
         }
     }
 
-    /// Compact page dots under the unit pager — Android UnitBalancePager parity
-    /// (6pt dots, 6pt gap, active pill at 2.5× width). Vertical gap to the hero
-    /// is the parent VStack's spacing.
+    /// Compact page dots under the unit pager (6pt dots, 6pt gap, active pill
+    /// at 2.5× width). Parent always reserves [pageDotGap + pageDotSize].
     private func unitPagerDots(_ units: [String]) -> some View {
         let selected = selectedHomeUnit.wrappedValue
         return HStack(spacing: 6) {
@@ -314,18 +316,22 @@ struct MainWalletView: View {
     // MARK: - Received Delta Beat
 
     /// The status line beneath the balance: the transient received-delta beat
-    /// while a payment just landed, otherwise the fiat sub-amount.
+    /// while a payment just landed, otherwise the fiat sub-amount. Always keeps
+    /// [statusLineHeight] so hiding fiat never collapses the hero.
     @ViewBuilder
     private var balanceStatusLine: some View {
-        if let delta = receivedDelta {
-            receivedDeltaBeat(delta)
-                .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
-        } else if settings.showFiatBalance && priceService.btcPriceUSD > 0 {
-            Text(priceService.formatSatsAsFiat(walletManager.balance))
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .transition(.opacity)
+        ZStack {
+            if let delta = receivedDelta {
+                receivedDeltaBeat(delta)
+                    .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .opacity))
+            } else if settings.showFiatBalance && priceService.btcPriceUSD > 0 {
+                Text(priceService.formatSatsAsFiat(walletManager.balance))
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
+            }
         }
+        .frame(height: statusLineHeight)
     }
 
     /// Quiet "+2,500" beat. Monochrome (`.secondary`) — no green, no checkmark,
