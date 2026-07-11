@@ -408,16 +408,19 @@ private fun PinnedTop(
                 )
             }
         }
-        // Mint chip centered above the balance.
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            mintChip()
+        // Mint chip + balance + Receive/Send — tighter vertical rhythm than the
+        // older ~28dp gaps so the hero block reads as one unit under the nav row.
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                mintChip()
+            }
+            balance()
+            triptych()
         }
-        // Spacing.spacedBy(12) above + micro spacer + spacing.spacedBy(12) below =
-        // ~28dp between mint→balance and balance→triptych (iOS-matched).
-        Spacer(Modifier.height(CashuTheme.spacing.micro))
-        balance()
-        Spacer(Modifier.height(CashuTheme.spacing.micro))
-        triptych()
     }
 }
 

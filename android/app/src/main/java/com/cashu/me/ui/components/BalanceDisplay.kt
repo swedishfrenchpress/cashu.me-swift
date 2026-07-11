@@ -85,7 +85,7 @@ fun BalanceDisplay(
             text = amount.primary,
             style = MaterialTheme.typography.displayMedium.copy(
                 fontWeight = FontWeight.Bold,
-                fontSize = 50.sp,
+                fontSize = 48.sp,
             ),
             color = LocalContentColor.current,
         )
