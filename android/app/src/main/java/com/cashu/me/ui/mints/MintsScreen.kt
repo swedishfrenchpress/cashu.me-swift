@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,16 +19,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -55,29 +53,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.MintDiscoveryManager
 import com.cashu.me.Core.SettingsManager
-import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.WalletManager
-import com.cashu.me.Core.mintUrlCandidates
 import com.cashu.me.Core.normalizeUserMintUrl
 import com.cashu.me.Core.shortenMintUrl
 import com.cashu.me.Models.MintInfo
 import com.cashu.me.ui.components.CanvasDivider
-import com.cashu.me.ui.components.CashuTextField
-import com.cashu.me.ui.components.GhostButton
-import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.MintAvatar
-import com.cashu.me.ui.components.PrimaryButton
-import com.cashu.me.ui.components.SectionHeader
 import com.cashu.me.ui.components.TabTopBar
 import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.withMonoDigits
@@ -96,19 +85,17 @@ fun MintsScreen(
 ) {
     val walletState by walletManager.state.collectAsState()
     val scope = rememberCoroutineScope()
-    val clipboard = LocalClipboardManager.current
 
-    var url by remember { mutableStateOf("") }
-    var nickname by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
     var pendingRemoval by remember { mutableStateOf<MintInfo?>(null) }
+    var addMintOpen by remember { mutableStateOf(false) }
+    var addMintInitialUrl by remember { mutableStateOf("") }
     var discoveryOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(scannedMintUrl) {
         val payload = scannedMintUrl?.trim().orEmpty()
         if (payload.isNotEmpty()) {
-            url = normalizeUserMintUrl(payload) ?: payload
-            error = null
+            addMintInitialUrl = normalizeUserMintUrl(payload) ?: payload
+            addMintOpen = true
             onScannedMintUrlConsumed()
         }
     }
@@ -117,33 +104,6 @@ fun MintsScreen(
     // Does not flip isLoading, so the list stays interactive.
     LaunchedEffect(Unit) {
         walletManager.refreshMintInfo()
-    }
-
-    fun pasteFromClipboard() {
-        val candidate = clipboard.getText()?.text?.let { mintUrlCandidates(it).firstOrNull() }
-        if (candidate == null) {
-            error = "No valid mint URL in clipboard."
-        } else {
-            url = candidate
-            error = null
-        }
-    }
-
-    fun addMint() {
-        val normalized = normalizeUserMintUrl(url)
-        if (normalized == null) {
-            error = "Enter a valid HTTPS mint URL."
-            return
-        }
-        error = null
-        scope.launch {
-            runCatching { walletManager.addMint(normalized) }
-                .onSuccess {
-                    url = ""
-                    nickname = ""
-                }
-                .onFailure { error = it.userFacingWalletMessage }
-        }
     }
 
     val topBarState = rememberTopAppBarState()
@@ -158,30 +118,6 @@ fun MintsScreen(
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TabTopBar(title = "Mints", scrollBehavior = scrollBehavior)
-        },
-        bottomBar = {
-            // Anchored footer so these actions read as the screen's primary
-            // CTA instead of trailing off right under the form fields.
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
-                    .padding(horizontal = CashuTheme.spacing.comfortable)
-                    .padding(top = CashuTheme.spacing.snug, bottom = CashuTheme.spacing.comfortable),
-                verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.tight),
-            ) {
-                PrimaryButton(
-                    text = "Add mint",
-                    onClick = ::addMint,
-                    enabled = url.isNotBlank() && !walletState.isLoading,
-                    loading = walletState.isLoading,
-                )
-                GhostButton(
-                    text = "Paste URL from clipboard",
-                    onClick = ::pasteFromClipboard,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
         },
     ) { padding ->
         LazyColumn(
@@ -214,6 +150,26 @@ fun MintsScreen(
                 }
             }
 
+            item("add-row") {
+                ListEntryRow(
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Add,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(CashuTheme.spacing.loose),
+                        )
+                    },
+                    title = "Add mint",
+                    subtitle = "Connect with a mint URL",
+                    onClick = {
+                        addMintInitialUrl = ""
+                        addMintOpen = true
+                    },
+                    modifier = Modifier.semantics { contentDescription = "Add mint" },
+                )
+            }
+
             item("discover-row") {
                 // Quiet nav-row weight: plain monochrome glyph, no filled circle.
                 ListEntryRow(
@@ -230,61 +186,21 @@ fun MintsScreen(
                     onClick = { discoveryOpen = true },
                 )
             }
-
-            item("add-form") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = CashuTheme.spacing.comfortable),
-                    verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-                ) {
-                    SectionHeader("Add mint")
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = CashuTheme.spacing.comfortable),
-                        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
-                    ) {
-                        CashuTextField(
-                            value = url,
-                            onValueChange = { url = it; error = null },
-                            label = "Mint URL",
-                            placeholder = "https://…",
-                            singleLine = true,
-                            isError = error != null,
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                                capitalization = KeyboardCapitalization.None,
-                            ),
-                            trailingIcon = {
-                                IconButton(onClick = onScan) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.QrCodeScanner,
-                                        contentDescription = "Scan",
-                                    )
-                                }
-                            },
-                        )
-                        CashuTextField(
-                            value = nickname,
-                            onValueChange = { nickname = it },
-                            label = "Nickname (optional)",
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Text(
-                            text = "Enter the URL of a Cashu mint to connect to it. " +
-                                "This wallet is not affiliated with any mint.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        if (error != null) {
-                            InlineNotice(text = error!!)
-                        }
-                    }
-                }
-            }
         }
+    }
+
+    if (addMintOpen) {
+        AddMintSheet(
+            walletManager = walletManager,
+            initialUrl = addMintInitialUrl,
+            onScan = {
+                // Camera overlays render under dialog windows — yield the sheet
+                // first; a successful scan reopens via scannedMintUrl.
+                addMintOpen = false
+                onScan()
+            },
+            onDismiss = { addMintOpen = false },
+        )
     }
 
     if (discoveryOpen) {
@@ -533,19 +449,16 @@ private fun MintRow(
     }
 }
 
-// Mint avatar / leading box size — matches TransactionRow's MethodIconSize for
-// vertically-aligned timeline rendering.
-private val MINT_AVATAR_SIZE = 40.dp
-
 @Composable
 internal fun ListEntryRow(
     leadingIcon: @Composable () -> Unit,
     title: String,
     subtitle: String? = null,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(
