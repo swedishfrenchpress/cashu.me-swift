@@ -9,6 +9,7 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.PaddingValues
@@ -348,7 +349,7 @@ fun NavHostController.navigateToTab(tab: TopTab) {
 }
 
 // ---------------------------------------------------------------------------
-// Motion: Material Shared Axis X (push/pop) + quiet fade (tab switches).
+// Motion: Material Shared Axis X (push/pop) + subtle fade-through (tabs).
 // ---------------------------------------------------------------------------
 
 /** Incoming content travels ~25% of width while fading in after the outgoing fade. */
@@ -389,10 +390,28 @@ private val popExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> Exi
     )
 }
 
-/** Subtle opacity crossfade between sibling tabs — no slide, no scale. */
+/** Subtle fade-through between sibling tabs — soft scale, short stagger. */
 internal val tabEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    fadeIn(tween(CashuMotion.TabFadeMs, easing = FastOutSlowInEasing))
+    fadeIn(
+        tween(
+            durationMillis = CashuMotion.TabFadeInMs,
+            delayMillis = CashuMotion.TabFadeOutMs,
+            easing = LinearOutSlowInEasing,
+        ),
+    ) + scaleIn(
+        initialScale = CashuMotion.TabFadeInitialScale,
+        animationSpec = tween(
+            durationMillis = CashuMotion.TabFadeInMs,
+            delayMillis = CashuMotion.TabFadeOutMs,
+            easing = FastOutSlowInEasing,
+        ),
+    )
 }
 internal val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-    fadeOut(tween(CashuMotion.TabFadeMs, easing = FastOutLinearInEasing))
+    fadeOut(
+        tween(
+            durationMillis = CashuMotion.TabFadeOutMs,
+            easing = FastOutLinearInEasing,
+        ),
+    )
 }
