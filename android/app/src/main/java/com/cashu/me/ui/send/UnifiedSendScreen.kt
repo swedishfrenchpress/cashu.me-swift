@@ -83,7 +83,7 @@ import com.cashu.me.ui.components.InspectorRow
 import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.MintSelectorRow
 import com.cashu.me.ui.components.NoticeSeverity
-import com.cashu.me.ui.components.NumberPad
+import com.cashu.me.ui.components.NumberPadFooter
 import com.cashu.me.ui.components.PaymentStatusPhase
 import com.cashu.me.ui.components.PaymentStatusScreen
 import com.cashu.me.ui.components.PrimaryButton
@@ -114,6 +114,9 @@ private sealed interface LockedRail {
         override val raw: String,
         val decoded: PaymentRequestDecodeResult.CashuPaymentRequest,
         val knownAmount: Long?,
+        // Arrived pre-formed (scan/deep link) vs. typed/pasted — iOS shows the
+        // raw request string only in the latter case (mirrors UnifiedSendView).
+        val fromScan: Boolean = false,
     ) : LockedRail
 }
 
@@ -195,6 +198,10 @@ fun UnifiedSendScreen(
         is CashuPaymentRequestRoute.PayWithEcash -> route.mint
         else -> walletState.mints.firstOrNull { it.url == activeMintUrl } ?: walletState.activeMint
     }
+    // Only a scanned/deep-linked Cashu Request hides the raw string and swaps
+    // the header (iOS CashuPaymentRequestPayView); typed/pasted ones keep the
+    // "To" pill like iOS's UnifiedSendView.
+    val creqFromScan = (locked as? LockedRail.Creq)?.fromScan == true
 
     fun reset(toInput: Boolean = true) {
         locked = null
@@ -210,7 +217,7 @@ fun UnifiedSendScreen(
     }
 
     /** Rail inference (iOS handleDestinationChange → advance). */
-    fun advance(raw: String) {
+    fun advance(raw: String, fromScan: Boolean = false) {
         val trimmed = raw.trim()
         if (trimmed.isEmpty() || trimmed == suppressedValue) return
         inputHint = null
@@ -226,7 +233,12 @@ fun UnifiedSendScreen(
                 }
             }
             is SendDestinationResolution.CashuRequest -> {
-                locked = LockedRail.Creq(resolution.request, resolution.decoded, resolution.knownAmount)
+                locked = LockedRail.Creq(
+                    resolution.request,
+                    resolution.decoded,
+                    resolution.knownAmount,
+                    fromScan = fromScan,
+                )
                 if (resolution.requiresAmountEntry) {
                     step = SendStep.Amount
                 } else {
@@ -333,7 +345,7 @@ fun UnifiedSendScreen(
     LaunchedEffect(prefilledPayload) {
         val pre = prefilledPayload?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
         destination = pre
-        advance(pre)
+        advance(pre, fromScan = true)
         onPrefilledConsumed()
     }
 
@@ -423,7 +435,7 @@ fun UnifiedSendScreen(
             }
             null -> {
                 SheetHeader(
-                    title = "Send",
+                    title = if (creqFromScan) "Pay Cashu Request" else "Send",
                     navigationIcon = if (step == SendStep.Input) {
                         Icons.Outlined.Close
                     } else {
@@ -472,6 +484,7 @@ fun UnifiedSendScreen(
 
                     SendStep.Amount -> AmountFace(
                         destination = locked?.raw ?: destination,
+                        showDestination = !creqFromScan,
                         amount = amount,
                         onAmountChange = { amount = it },
                         mint = activeMint,
@@ -544,8 +557,8 @@ fun UnifiedSendScreen(
         MintPickerSheet(
             mints = walletState.mints,
             activeMintUrl = activeMintUrl,
-            onSelect = {
-                selectedMintUrl = it.url
+            onSelect = { mint ->
+                mint?.let { selectedMintUrl = it.url }
                 mintPickerOpen = false
             },
             onDismiss = { mintPickerOpen = false },
@@ -745,6 +758,7 @@ private fun ToPill(destination: String) {
 @Composable
 private fun AmountFace(
     destination: String,
+    showDestination: Boolean = true,
     amount: String,
     onAmountChange: (String) -> Unit,
     mint: MintInfo?,
@@ -762,17 +776,10 @@ private fun AmountFace(
             .padding(horizontal = CashuTheme.spacing.comfortable),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        ToPill(destination = destination)
-        Spacer(Modifier.height(CashuTheme.spacing.section))
-        AmountEntryHero(
-            entryRaw = amount,
-            isSat = true,
-            unit = "sat",
-            decimals = 0,
-            useBitcoinSymbol = useBitcoinSymbol,
-            formatter = formatter,
-        )
-        Spacer(Modifier.height(CashuTheme.spacing.default))
+        if (showDestination) {
+            ToPill(destination = destination)
+            Spacer(Modifier.height(CashuTheme.spacing.section))
+        }
         if (mint != null) {
             MintSelectorRow(
                 mint = mint,
@@ -782,14 +789,22 @@ private fun AmountFace(
             )
         }
         Spacer(Modifier.weight(1f))
-        NumberPad(amount = amount, onAmountChange = onAmountChange)
-        Spacer(Modifier.height(CashuTheme.spacing.page))
-        PrimaryButton(
-            text = "Continue",
-            onClick = onContinue,
-            enabled = amountValue > 0,
+        AmountEntryHero(
+            entryRaw = amount,
+            isSat = true,
+            unit = "sat",
+            decimals = 0,
+            useBitcoinSymbol = useBitcoinSymbol,
+            formatter = formatter,
         )
-        Spacer(Modifier.navigationBarsPadding())
+        Spacer(Modifier.weight(1f))
+        NumberPadFooter(
+            amount = amount,
+            onAmountChange = onAmountChange,
+            buttonText = "Continue",
+            onButtonClick = onContinue,
+            buttonEnabled = amountValue > 0,
+        )
     }
 }
 
@@ -815,6 +830,8 @@ private fun ConfirmFace(
     val isMelt = rail is LockedRail.Melt
     val isOnchain = (rail as? LockedRail.Melt)?.decoded is PaymentRequestDecodeResult.Onchain
     val cashuAmountLabel = (rail as? LockedRail.Creq)?.decoded?.summary?.let(PaymentRequestDecoder::amountLabel)
+    val creqDescription = (rail as? LockedRail.Creq)?.decoded?.summary?.description
+    val hideCreqDestination = (rail as? LockedRail.Creq)?.fromScan == true
     val total = quote?.totalAmount ?: amountSats
     val insufficient = isMelt && quote != null && total > mintBalance
     val canPayCashuRequest = cashuRoute == null ||
@@ -835,7 +852,7 @@ private fun ConfirmFace(
                 onPickMint = onPickMint,
             )
         }
-        rail?.let { ToPill(destination = it.raw) }
+        if (!hideCreqDestination) rail?.let { ToPill(destination = it.raw) }
         Spacer(Modifier.height(CashuTheme.spacing.section))
         AmountText(
             text = cashuAmountLabel ?: formatter.formatWalletSats(amountSats, useBitcoinSymbol),
@@ -884,6 +901,10 @@ private fun ConfirmFace(
                         value = mint.name,
                         leadingIcon = Icons.Outlined.AccountBalance,
                     )
+                }
+                if (!creqDescription.isNullOrBlank()) {
+                    CanvasDivider(leadingInset = 16.dp)
+                    InspectorRow(label = "Memo", value = creqDescription)
                 }
                 when (val route = cashuRoute) {
                     is CashuPaymentRequestRoute.PayWithEcash -> {
