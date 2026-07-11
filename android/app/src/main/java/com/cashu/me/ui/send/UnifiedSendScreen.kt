@@ -130,7 +130,10 @@ private sealed interface SendStatus {
  * The Send surface (iOS UnifiedSendView): one destination field that infers the
  * rail, a Scan · Ecash · Tap ways-to-send row, then amount → confirm → status.
  * Home's Send button lands here directly — there is no send chooser.
- * Hosted in the shell's flow bottom sheet at full height (iOS `.large`).
+ *
+ * Input (and empty states) wrap content so the sheet hugs the field + method
+ * buttons — thumb-reachable, matching iOS's content-fit detent. Amount /
+ * confirm / status expand to fill the sheet (iOS `.large`).
  */
 @Composable
 fun UnifiedSendScreen(
@@ -376,7 +379,16 @@ fun UnifiedSendScreen(
         if (status == null) goBack()
     }
 
-    Column(modifier = Modifier.fillMaxHeight()) {
+    // Compact while the input face is up so Scan/Ecash/Tap sit near the thumb;
+    // amount/confirm/status need the full sheet for the keypad and pay scaffold.
+    val prefersCompactSheet = status == null && step == SendStep.Input
+    Column(
+        modifier = if (prefersCompactSheet) {
+            Modifier.fillMaxWidth()
+        } else {
+            Modifier.fillMaxHeight()
+        },
+    ) {
         // Status terminal replaces the whole body (iOS PaymentStatusView slot).
         when (val current = status) {
             SendStatus.Sending -> Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -446,9 +458,13 @@ fun UnifiedSendScreen(
                 )
                 TwoFaceScreen(
                     targetState = step,
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
+                    modifier = if (step == SendStep.Input) {
+                        Modifier.fillMaxWidth()
+                    } else {
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    },
                     forward = { initial, target -> target.ordinal >= initial.ordinal },
                     label = "unified-send-step",
                 ) { current ->
@@ -598,20 +614,29 @@ private fun InputFace(
             return
         }
         !hasBalance -> {
+            // Compact (no fillMaxHeight) so the sheet hugs this empty state.
             EmptyState(
                 icon = Icons.Outlined.Payments,
                 title = "Nothing to send yet",
                 supporting = "Receive some ecash before you can send.",
                 actionLabel = "Receive",
                 onAction = onReceive,
+                fillHeight = false,
+                modifier = Modifier
+                    .padding(vertical = CashuTheme.spacing.section)
+                    .navigationBarsPadding(),
             )
             return
         }
     }
+    // Wrap-content — no fillMaxSize / weight spacer — so the sheet settles just
+    // below Scan · Ecash · Tap instead of stretching full-screen.
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .padding(horizontal = CashuTheme.spacing.comfortable)
+            .padding(bottom = CashuTheme.spacing.section)
+            .navigationBarsPadding()
             .imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -676,7 +701,6 @@ private fun InputFace(
                 )
             }
         }
-        Spacer(Modifier.weight(1f))
     }
 }
 
@@ -707,10 +731,11 @@ private fun SendMethodButton(
 private fun NoMintsFace(onOpenMints: () -> Unit) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = CashuTheme.spacing.section),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .fillMaxWidth()
+            .padding(horizontal = CashuTheme.spacing.section)
+            .padding(top = CashuTheme.spacing.default, bottom = CashuTheme.spacing.section)
+            .navigationBarsPadding(),
+        horizontalAlignment = Alignment.Start,
     ) {
         Text(
             text = "Connect a mint first",
