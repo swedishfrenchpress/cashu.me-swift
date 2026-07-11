@@ -31,9 +31,11 @@ struct MainWalletView: View {
 
     private let recentRowCap = 5
     private let scrollFadeBand: CGFloat = 24
-    /// Fixed height for the multi-unit balance pager so the pinned-top inset
-    /// measurement (and the scroll-fade mask) stays stable across unit swipes.
-    private let heroPagerHeight: CGFloat = 118
+    /// Fixed height for the multi-unit balance *content* (hero only). Page dots
+    /// sit outside with Android-matching snug spacing — not the system
+    /// UIPageControl, which pads far more vertically.
+    private let heroPagerHeight: CGFloat = 80
+    private let pageDotSize: CGFloat = 6
 
     /// Units the home hero can page through: sat, then each held non-sat unit.
     private var homeUnits: [String] {
@@ -213,15 +215,22 @@ struct MainWalletView: View {
                     // (Apple Wallet-card idiom). Carve-out to the retired
                     // home mint-card swiper — this is a single-hero *unit*
                     // switcher, canvas stays bare. See DESIGN.md.
-                    TabView(selection: selectedHomeUnit) {
-                        ForEach(units, id: \.self) { unit in
-                            unitBalanceHero(unit)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                                .tag(unit)
+                    // Custom dots (not UIPageControl) so vertical margin stays
+                    // tight — tighter than Android's snug 8pt; system page
+                    // control pads far more.
+                    VStack(spacing: 2) {
+                        TabView(selection: selectedHomeUnit) {
+                            ForEach(units, id: \.self) { unit in
+                                unitBalanceHero(unit)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                                    .tag(unit)
+                            }
                         }
+                        .tabViewStyle(.page(indexDisplayMode: .never))
+                        .frame(height: heroPagerHeight)
+
+                        unitPagerDots(units)
                     }
-                    .tabViewStyle(.page(indexDisplayMode: .always))
-                    .frame(height: heroPagerHeight)
                 }
             }
             .padding(.top, 18)
@@ -280,6 +289,26 @@ struct MainWalletView: View {
                 Color.clear.frame(height: 22)
             }
         }
+    }
+
+    /// Compact page dots under the unit pager — Android UnitBalancePager parity
+    /// (6pt dots, 6pt gap, active pill at 2.5× width). Vertical gap to the hero
+    /// is the parent VStack's spacing.
+    private func unitPagerDots(_ units: [String]) -> some View {
+        let selected = selectedHomeUnit.wrappedValue
+        return HStack(spacing: 6) {
+            ForEach(units, id: \.self) { unit in
+                let isSelected = unit == selected
+                Capsule()
+                    .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.2))
+                    .frame(
+                        width: isSelected ? pageDotSize * 2.5 : pageDotSize,
+                        height: pageDotSize
+                    )
+            }
+        }
+        .animation(reduceMotion ? nil : .snappy, value: selected)
+        .accessibilityHidden(true)
     }
 
     // MARK: - Received Delta Beat
