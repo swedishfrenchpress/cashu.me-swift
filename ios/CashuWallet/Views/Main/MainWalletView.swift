@@ -82,6 +82,19 @@ struct MainWalletView: View {
             }
             .onPreferenceChange(TopInsetHeightKey.self) { topInsetHeight = $0 }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        SettingsView()
+                            .toolbar(.hidden, for: .tabBar)
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.body.weight(.semibold))
+                            .toolbarIconTapTarget()
+                    }
+                    .accessibilityLabel("Settings")
+                    .accessibilityHint("Opens wallet settings")
+                    .accessibilityIdentifier("wallet-settings-button")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         activeSheet = .scanner

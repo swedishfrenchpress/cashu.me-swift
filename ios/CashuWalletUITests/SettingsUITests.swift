@@ -1,13 +1,16 @@
 import XCTest
 
-/// UI tests for the Settings tab navigation and basic interactions.
+/// UI tests for wallet-header Settings navigation and basic interactions.
 final class SettingsUITests: UITestBase {
     override var launchMode: LaunchMode { .seededWallet }
 
     // MARK: - Helpers
 
     private func navigateToSettings() {
-        tapTab("Settings")
+        waitForMainTab()
+        let settings = app.buttons["wallet-settings-button"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
     }
 
     // MARK: - Tests
@@ -26,17 +29,18 @@ final class SettingsUITests: UITestBase {
         )
     }
 
-    func testSettingsTabIsAccessible() throws {
+    func testSettingsButtonIsAccessible() throws {
         navigateToSettings()
 
-        XCTAssertTrue(mainTabBar(timeout: 5).exists)
-        XCTAssertTrue(tabButton("Settings").isSelected)
+        XCTAssertTrue(app.navigationBars["Settings"].exists)
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
     }
 
     func testCanReturnToWalletFromSettings() throws {
         navigateToSettings()
 
-        tapTab("Wallet")
+        app.navigationBars["Settings"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["wallet-settings-button"].waitForExistence(timeout: 5))
         XCTAssertTrue(tabButton("Wallet").isSelected)
     }
 }
