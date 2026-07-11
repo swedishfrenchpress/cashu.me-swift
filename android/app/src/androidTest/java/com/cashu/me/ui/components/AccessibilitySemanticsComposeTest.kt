@@ -2,6 +2,8 @@ package com.cashu.me.ui.components
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -16,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -44,7 +47,11 @@ class AccessibilitySemanticsComposeTest {
         var privacyEnabled = true
 
         compose.setCashuContent {
-            Column(Modifier.width(360.dp)) {
+            Column(
+                Modifier
+                    .width(360.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
                 BalanceDisplay(
                     amount = AmountDisplayText(
                         primary = "42 sat",
@@ -101,18 +108,23 @@ class AccessibilitySemanticsComposeTest {
             .assertHasClickAction()
             .performClick()
         compose.onNodeWithContentDescription("QR code. Long press for copy and share options.")
+            .performScrollTo()
             .assertIsDisplayed()
             .assertHasClickAction()
             .performTouchInput { longClick() }
         compose.onNodeWithText("Copy").assertIsDisplayed()
         compose.onNodeWithText("Share").assertIsDisplayed()
+        compose.onNodeWithText("Copy").performClick()
         compose.onNodeWithContentDescription("Delete. Long press to clear.")
+            .performScrollTo()
             .assertIsDisplayed()
             .assertHasClickAction()
         compose.onNodeWithContentDescription("Received ecash, Incoming, Completed, +21 sat, \$0.01, Today")
+            .performScrollTo()
             .assertHasClickAction()
             .performClick()
         compose.onNodeWithTag("privacyToggle")
+            .performScrollTo()
             .assertHasClickAction()
             .performClick()
 
