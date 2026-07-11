@@ -3,4 +3,6 @@
     <color name="cashu_icon_background">#000000</color>
     <color name="cashu_accent">#000000</color>
     <color name="cashu_accent_inverse">#FFFFFF</color>
+    <!-- Matches Compose LightInkColorScheme.background — splash → loading handoff. -->
+    <color name="cashu_canvas">#FFFFFF</color>
 </resources>

@@ -4,11 +4,15 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
 import com.cashu.me.ui.shell.CashuApp
 
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Replaces the default circular launcher-icon splash with a solid canvas
+        // that matches the Compose LoadingScreen (light/dark via values-night).
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val container = (application as CashuWalletApplication).container
