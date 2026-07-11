@@ -36,14 +36,16 @@ import com.cashu.me.ui.theme.CashuTheme
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.withMonoDigits
 
-/** Fixed primary-line height for the 48sp hero number. */
-val BalanceHeroPrimaryHeight: Dp = 56.dp
+/** Fixed primary-line height for the 53sp hero number. */
+val BalanceHeroPrimaryHeight: Dp = 62.dp
 
 /** Fixed status-line height (titleMedium / delta / empty reserve). */
 val BalanceHeroStatusHeight: Dp = 24.dp
 
 /** Full hero column: primary + micro gap + status. */
 val BalanceHeroHeight: Dp = BalanceHeroPrimaryHeight + 4.dp + BalanceHeroStatusHeight
+
+private val BalanceHeroFontSize = 53.sp
 
 /** What occupies the status line under the hero number. */
 private sealed interface BalanceStatusLine {
@@ -108,7 +110,7 @@ fun BalanceDisplay(
                 text = amount.primary,
                 style = MaterialTheme.typography.displayMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 48.sp,
+                    fontSize = BalanceHeroFontSize,
                 ),
                 color = LocalContentColor.current,
             )
