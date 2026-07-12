@@ -32,7 +32,6 @@ import com.cashu.me.ui.mints.MintsScreen
 import com.cashu.me.ui.receive.CashuRequestDetailScreen
 import com.cashu.me.ui.settings.AdvancedKeysScreen
 import com.cashu.me.ui.settings.BackupRestoreScreen
-import com.cashu.me.ui.settings.BackupScreen
 import com.cashu.me.ui.settings.DeviceKeyDetailScreen
 import com.cashu.me.ui.settings.LightningScreen
 import com.cashu.me.ui.settings.NostrScreen
@@ -159,13 +158,7 @@ fun CashuNavHost(
                 walletManager = container.walletManager,
                 settingsManager = container.settingsManager,
                 nostrMintBackupService = container.nostrMintBackupService,
-                onOpenBackup = { navController.navigate(Routes.SETTINGS_BACKUP) },
-                onClose = { navController.popBackStack() },
-            )
-        }
-        composable(Routes.SETTINGS_BACKUP) {
-            BackupScreen(
-                walletManager = container.walletManager,
+                appLockManager = container.appLockManager,
                 onClose = { navController.popBackStack() },
             )
         }
