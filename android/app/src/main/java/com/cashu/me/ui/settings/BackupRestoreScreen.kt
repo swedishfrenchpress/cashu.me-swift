@@ -29,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import kotlinx.coroutines.launch
+import com.cashu.me.Core.AppLockManager
 import com.cashu.me.Core.NostrMintBackupService
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.WalletManager
@@ -51,7 +52,7 @@ fun BackupRestoreScreen(
     walletManager: WalletManager,
     settingsManager: SettingsManager,
     nostrMintBackupService: NostrMintBackupService,
-    onOpenBackup: () -> Unit,
+    appLockManager: AppLockManager,
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -60,6 +61,7 @@ fun BackupRestoreScreen(
     val backupState by nostrMintBackupService.state.collectAsState()
 
     var confirmRestore by remember { mutableStateOf(false) }
+    var showBackupSheet by remember { mutableStateOf(false) }
     var backupError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
@@ -87,7 +89,7 @@ fun BackupRestoreScreen(
                 title = "Backup seed phrase",
                 subtitle = "View and copy your 12 recovery words.",
                 leadingIcon = Icons.Outlined.VpnKey,
-                onClick = onOpenBackup,
+                onClick = { showBackupSheet = true },
             )
             NavRow(
                 title = "Restore",
@@ -137,6 +139,14 @@ fun BackupRestoreScreen(
                 ),
             )
         }
+    }
+
+    if (showBackupSheet) {
+        BackupSeedSheet(
+            walletManager = walletManager,
+            appLockManager = appLockManager,
+            onDismiss = { showBackupSheet = false },
+        )
     }
 
     if (confirmRestore) {
