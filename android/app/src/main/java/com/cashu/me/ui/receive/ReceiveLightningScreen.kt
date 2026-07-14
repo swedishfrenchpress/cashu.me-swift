@@ -27,7 +27,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.AccountBalance
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CurrencyBitcoin
@@ -43,7 +47,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -61,11 +67,14 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import java.text.DateFormat
+import java.util.Date
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import com.cashu.me.Core.AmountFormatter
+import com.cashu.me.Core.CashuRequestStore
 import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.SettingsManager
@@ -110,11 +119,13 @@ private sealed interface ReceiveLnFace {
 @Composable
 fun ReceiveLightningScreen(
     walletManager: WalletManager,
+    cashuRequestStore: CashuRequestStore,
     settingsManager: SettingsManager,
     onClose: () -> Unit,
 ) {
     val walletState by walletManager.state.collectAsState()
     val settings by settingsManager.state.collectAsState()
+    val cashuRequestState by cashuRequestStore.state.collectAsState()
     val formatter = remember { AmountFormatter() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -131,6 +142,8 @@ fun ReceiveLightningScreen(
     var selectedReceiveUnit by remember { mutableStateOf<String?>(null) }
     var unitPickerOpen by remember { mutableStateOf(false) }
     var mintPickerOpen by remember { mutableStateOf(false) }
+    var reusableAmountPickerOpen by remember { mutableStateOf(false) }
+    var displayActionsOpen by remember { mutableStateOf(false) }
 
     val activeMint = walletState.activeMint
     val supportedMethods = activeMint?.supportedMintMethods?.ifEmpty { listOf(PaymentMethodKind.Bolt11) }
@@ -147,9 +160,25 @@ fun ReceiveLightningScreen(
     val showsUnitSelector = activeMint?.supportsMultipleMintUnits == true &&
         method != PaymentMethodKind.Onchain
 
+    fun persistReusableOffer(quote: MintQuoteInfo) {
+        if (quote.paymentMethod != PaymentMethodKind.Bolt12) return
+        cashuRequestStore.upsertQuoteIntent(
+            quoteId = quote.id,
+            quoteKind = "bolt12",
+            // CDK reports the latest payment as the quote amount after it has
+            // been paid. Keep the intent amountless so History continues to
+            // represent this as an "Any" reusable invoice.
+            amount = quote.amount.takeUnless { quote.isAmountless },
+            unit = quote.unit,
+            mints = listOfNotNull(quote.mintUrl ?: activeMint?.url),
+            encoded = quote.request,
+        )
+    }
+
     fun createMintRequest(
         requestMethod: PaymentMethodKind,
         amountless: Boolean,
+        forceNewReusableOffer: Boolean = false,
     ) {
         val explicit = UnitAmountEntry.baseUnits(amount, currency.decimals)
             .takeIf { it > 0 }
@@ -168,17 +197,68 @@ fun ReceiveLightningScreen(
         errorText = null
         scope.launch {
             try {
-                val quote = walletManager.createMintQuote(
-                    amount = requestAmount,
-                    method = requestMethod,
-                    unit = if (requestMethod == PaymentMethodKind.Onchain) "sat" else effectiveUnit,
-                )
+                val requestUnit = if (requestMethod == PaymentMethodKind.Onchain) "sat" else effectiveUnit
+                val quote = if (
+                    requestMethod == PaymentMethodKind.Bolt12 &&
+                    amountless &&
+                    !forceNewReusableOffer
+                ) {
+                    walletManager.existingAmountlessBolt12Offer(unit = requestUnit)
+                        ?: walletManager.createMintQuote(
+                            amount = null,
+                            method = requestMethod,
+                            unit = requestUnit,
+                        )
+                } else {
+                    walletManager.createMintQuote(
+                        amount = requestAmount,
+                        method = requestMethod,
+                        unit = requestUnit,
+                    )
+                }
                 face = ReceiveLnFace.Display(quote)
             } catch (t: Throwable) {
                 errorText = t.userFacingWalletMessage
             } finally {
                 creating = false
             }
+        }
+    }
+
+    fun createNewReusableInvoice() {
+        method = PaymentMethodKind.Bolt12
+        amount = ""
+        errorText = null
+        createMintRequest(
+            requestMethod = PaymentMethodKind.Bolt12,
+            amountless = true,
+            forceNewReusableOffer = true,
+        )
+    }
+
+    /**
+     * Re-mints the reusable BOLT12 offer at a new amount (iOS
+     * `setReusableOfferAmount`). null / 0 → amountless (reuse existing offer);
+     * positive → a fresh fixed-amount offer.
+     */
+    fun setReusableOfferAmount(nextAmount: Long?) {
+        method = PaymentMethodKind.Bolt12
+        errorText = null
+        if (nextAmount == null || nextAmount <= 0L) {
+            amount = ""
+            createMintRequest(
+                requestMethod = PaymentMethodKind.Bolt12,
+                amountless = true,
+                forceNewReusableOffer = false,
+            )
+        } else {
+            val quoteUnit = (face as? ReceiveLnFace.Display)?.quote?.unit ?: effectiveUnit
+            val decimals = CurrencyRegistry.currencyForMintUnit(quoteUnit).decimals
+            amount = UnitAmountEntry.entryString(nextAmount, decimals)
+            createMintRequest(
+                requestMethod = PaymentMethodKind.Bolt12,
+                amountless = false,
+            )
         }
     }
 
@@ -245,10 +325,53 @@ fun ReceiveLightningScreen(
             actions = {
                 val current = face
                 if (current is ReceiveLnFace.Display) {
-                    IconButton(onClick = {
-                        context.shareText(current.quote.request, subject = "Payment request")
-                    }) {
-                        ToolbarIcon(Icons.Outlined.IosShare, contentDescription = "Share")
+                    if (current.quote.paymentMethod == PaymentMethodKind.Bolt12) {
+                        // Overflow menu keeps share + new-invoice secondary —
+                        // quieter than a prominent Share / New pair (iOS still
+                        // uses ShareLink; Android folds both into ⋮).
+                        IconButton(onClick = { displayActionsOpen = true }) {
+                            ToolbarIcon(Icons.Filled.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(
+                            expanded = displayActionsOpen,
+                            onDismissRequest = { displayActionsOpen = false },
+                            shape = MaterialTheme.shapes.large,
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Share") },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.IosShare, contentDescription = null)
+                                },
+                                onClick = {
+                                    displayActionsOpen = false
+                                    context.shareText(
+                                        current.quote.request,
+                                        subject = "Reusable Invoice",
+                                    )
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (creating) "Creating…" else "New reusable invoice",
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.Repeat, contentDescription = null)
+                                },
+                                enabled = !creating,
+                                onClick = {
+                                    displayActionsOpen = false
+                                    createNewReusableInvoice()
+                                },
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = {
+                            context.shareText(current.quote.request, subject = "Payment request")
+                        }) {
+                            ToolbarIcon(Icons.Outlined.IosShare, contentDescription = "Share")
+                        }
                     }
                 } else if (current is ReceiveLnFace.Input) {
                     // Method picker rides the header (iOS parity): an icon
@@ -360,6 +483,9 @@ fun ReceiveLightningScreen(
                 is ReceiveLnFace.Display -> {
                     var liveQuote by remember(current.quote.id) { mutableStateOf(current.quote) }
                     LaunchedEffect(current.quote.id) {
+                        persistReusableOffer(current.quote)
+                    }
+                    LaunchedEffect(current.quote.id) {
                         walletManager.subscribeToMintQuote(current.quote.id)
                             .catch { /* swallow; we'll fall back to manual polling */ }
                             .collectLatest { liveQuote = it }
@@ -382,7 +508,40 @@ fun ReceiveLightningScreen(
                             ).formatted()
                         }
                     }
-                    LaunchedEffect(liveQuote.state) {
+                    val receivedAmountLabel = liveQuote.amountPaid
+                        .takeIf { it > 0 }
+                        ?.let { paid ->
+                            if (liveQuote.unit.equals("sat", ignoreCase = true)) {
+                                formatter.formatWalletSats(paid, settings.useBitcoinSymbol)
+                            } else {
+                                CurrencyAmount(
+                                    paid,
+                                    CurrencyRegistry.currencyForMintUnit(liveQuote.unit),
+                                ).formatted()
+                            }
+                        }
+                    LaunchedEffect(
+                        liveQuote.id,
+                        liveQuote.state,
+                        liveQuote.amountPaid,
+                        liveQuote.amountIssued,
+                    ) {
+                        if (liveQuote.paymentMethod == PaymentMethodKind.Bolt12) {
+                            // Reusable offers never reach the one-shot success
+                            // terminal. The synchronizer mints a newly-paid
+                            // amount when needed and always reloads History,
+                            // including the already-issued case. Keep the QR on
+                            // screen to accept the next payment.
+                            if (liveQuote.amountPaid > 0 ||
+                                liveQuote.state == MintQuoteState.Paid ||
+                                liveQuote.state == MintQuoteState.Issued
+                            ) {
+                                walletManager.launch {
+                                    runCatching { walletManager.refreshPendingMintQuote(liveQuote.id) }
+                                }
+                            }
+                            return@LaunchedEffect
+                        }
                         if (liveQuote.state == MintQuoteState.Paid ||
                             liveQuote.state == MintQuoteState.Issued
                         ) {
@@ -398,9 +557,23 @@ fun ReceiveLightningScreen(
                     }
                     DisplayFace(
                         quote = liveQuote,
-                        amountLabel = amountLabel,
+                        amountLabel = amountLabel.takeUnless {
+                            liveQuote.paymentMethod == PaymentMethodKind.Bolt12 && liveQuote.isAmountless
+                        },
+                        receivedAmountLabel = receivedAmountLabel,
                         mintName = activeMint?.name,
+                        createdAtEpochMillis = cashuRequestState.requests
+                            .firstOrNull { it.quoteId == liveQuote.id }
+                            ?.createdAtEpochMillis,
+                        errorText = errorText,
                         onCopy = { clipboard.setText(AnnotatedString(liveQuote.request)) },
+                        onEditReusableAmount = if (
+                            liveQuote.paymentMethod == PaymentMethodKind.Bolt12
+                        ) {
+                            { reusableAmountPickerOpen = true }
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -434,6 +607,26 @@ fun ReceiveLightningScreen(
                 unitPickerOpen = false
             },
             onDismiss = { unitPickerOpen = false },
+        )
+    }
+
+    val displayQuote = (face as? ReceiveLnFace.Display)?.quote
+    if (reusableAmountPickerOpen && displayQuote?.paymentMethod == PaymentMethodKind.Bolt12) {
+        val quoteUnit = displayQuote.unit
+        val isSat = quoteUnit.equals("sat", ignoreCase = true)
+        val quoteCurrency = CurrencyRegistry.currencyForMintUnit(quoteUnit)
+        ReusableAmountEditSheet(
+            initialAmount = displayQuote.amount.takeUnless { displayQuote.isAmountless },
+            isSat = isSat,
+            unit = quoteUnit,
+            decimals = quoteCurrency.decimals,
+            useBitcoinSymbol = settings.useBitcoinSymbol,
+            formatter = formatter,
+            onDone = { next ->
+                reusableAmountPickerOpen = false
+                setReusableOfferAmount(next)
+            },
+            onDismiss = { reusableAmountPickerOpen = false },
         )
     }
 }
@@ -601,8 +794,12 @@ private val PaymentMethodKind.copyActionTitle: String
 private fun DisplayFace(
     quote: MintQuoteInfo,
     amountLabel: String?,
+    receivedAmountLabel: String?,
     mintName: String?,
+    createdAtEpochMillis: Long?,
+    errorText: String?,
     onCopy: () -> Unit,
+    onEditReusableAmount: (() -> Unit)?,
 ) {
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
@@ -611,6 +808,7 @@ private fun DisplayFace(
             copied = false
         }
     }
+    val isReusable = quote.paymentMethod == PaymentMethodKind.Bolt12
     Column(modifier = Modifier.fillMaxSize()) {
         // Scrolling content region; the copy CTA is pinned to the bottom (iOS
         // parity — the QR is the focal element, actions sit below the fold).
@@ -634,9 +832,56 @@ private fun DisplayFace(
                         .withMonoDigits(),
                 )
             }
-            WaitingForPaymentRow()
-            ExpiryCaption(expirySeconds = quote.expiryEpochSeconds)
-            if (mintName != null) {
+            if (isReusable) {
+                ReusableOfferStatus(
+                    received = receivedAmountLabel != null,
+                    receivedAmountLabel = receivedAmountLabel,
+                )
+            } else {
+                WaitingForPaymentRow()
+            }
+            errorText?.let { InlineNotice(text = it) }
+            if (!isReusable) {
+                ExpiryCaption(expirySeconds = quote.expiryEpochSeconds)
+            }
+            if (isReusable) {
+                // Cashu-Request-style inspector group (iOS reusableOfferDisplayView).
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (mintName != null) {
+                        InspectorRow(
+                            label = "Mint",
+                            value = mintName,
+                            leadingIcon = Icons.Outlined.AccountBalance,
+                        )
+                        CanvasDivider(leadingInset = 16.dp)
+                    }
+                    InspectorRow(
+                        label = "Amount",
+                        value = amountLabel ?: "Any",
+                        leadingIcon = Icons.Outlined.AccountBalanceWallet,
+                        valueMonospaced = amountLabel != null,
+                        editable = onEditReusableAmount != null,
+                        onClick = onEditReusableAmount,
+                    )
+                    if (createdAtEpochMillis != null) {
+                        CanvasDivider(leadingInset = 16.dp)
+                        InspectorRow(
+                            label = "Created",
+                            value = formatReusableCreatedAt(createdAtEpochMillis),
+                            leadingIcon = Icons.Outlined.CalendarToday,
+                        )
+                    }
+                    if (receivedAmountLabel != null) {
+                        CanvasDivider(leadingInset = 16.dp)
+                        InspectorRow(
+                            label = "Total received",
+                            value = receivedAmountLabel,
+                            leadingIcon = Icons.Outlined.CheckCircle,
+                            valueMonospaced = true,
+                        )
+                    }
+                }
+            } else if (mintName != null) {
                 InspectorRow(
                     label = "Mint",
                     value = mintName,
@@ -644,20 +889,23 @@ private fun DisplayFace(
                 )
             }
         }
-        PrimaryButton(
-            text = if (copied) "Copied" else quote.paymentMethod.copyActionTitle,
-            onClick = {
-                onCopy()
-                copied = true
-            },
+        Column(
             modifier = Modifier.padding(horizontal = CashuTheme.spacing.comfortable),
-        )
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+        ) {
+            PrimaryButton(
+                text = if (copied) "Copied" else quote.paymentMethod.copyActionTitle,
+                onClick = {
+                    onCopy()
+                    copied = true
+                },
+            )
+        }
         Spacer(Modifier.navigationBarsPadding())
     }
 }
 
-/** Pulsing clock + "Waiting for payment…" — the only pending status now that a
- *  paid quote crossfades to the full-screen success terminal. */
+/** Pulsing clock + "Waiting for payment…" for one-shot invoices. */
 @Composable
 private fun WaitingForPaymentRow() {
     val reducedMotion = rememberReducedMotion()
@@ -688,6 +936,96 @@ private fun WaitingForPaymentRow() {
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
+    }
+}
+
+/**
+ * Status line for a reusable BOLT12 offer. Mirrors the Cashu Request status
+ * block: quiet waiting pulse, then a green "Payment received!" once funds land
+ * — without the old multi-line explainer that crowded the QR.
+ */
+@Composable
+private fun ReusableOfferStatus(received: Boolean, receivedAmountLabel: String?) {
+    if (received) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(CashuTheme.spacing.snug),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.CheckCircle,
+                contentDescription = null,
+                tint = CashuTheme.colors.received,
+                modifier = Modifier.size(CashuTheme.spacing.loose),
+            )
+            Text(
+                text = receivedAmountLabel?.let { "Received $it" } ?: "Payment received!",
+                style = MaterialTheme.typography.titleMedium,
+                color = CashuTheme.colors.received,
+            )
+        }
+    } else {
+        WaitingForPaymentRow()
+    }
+}
+
+private fun formatReusableCreatedAt(epochMillis: Long): String =
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(epochMillis))
+
+/** Amount-only edit sheet for a reusable BOLT12 offer (iOS
+ *  `CashuRequestAmountPickerSheet` parity). Empty pad → "Any". */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReusableAmountEditSheet(
+    initialAmount: Long?,
+    isSat: Boolean,
+    unit: String,
+    decimals: Int,
+    useBitcoinSymbol: Boolean,
+    formatter: AmountFormatter,
+    onDone: (Long?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var amount by remember {
+        mutableStateOf(UnitAmountEntry.entryString(initialAmount ?: 0, decimals))
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .padding(horizontal = CashuTheme.spacing.comfortable),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            SheetHeader(
+                title = "Amount",
+                navigationIcon = Icons.Outlined.Close,
+                navigationContentDescription = "Close",
+                onNavigationClick = onDismiss,
+            )
+            Spacer(Modifier.weight(1f))
+            AmountEntryHero(
+                entryRaw = amount,
+                isSat = isSat,
+                unit = unit,
+                decimals = decimals,
+                useBitcoinSymbol = useBitcoinSymbol,
+                formatter = formatter,
+            )
+            Spacer(Modifier.weight(1f))
+            NumberPadFooter(
+                amount = amount,
+                onAmountChange = { amount = it },
+                decimals = decimals,
+                buttonText = "Done",
+                onButtonClick = {
+                    onDone(UnitAmountEntry.baseUnits(amount, decimals).takeIf { it > 0 })
+                },
+            )
+        }
     }
 }
 
