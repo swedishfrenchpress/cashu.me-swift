@@ -686,8 +686,13 @@ struct SendView: View {
                     // Detail rows on canvas with hairline dividers — same
                     // pattern as the Lightning Invoice screen.
                     VStack(spacing: 0) {
-                        detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: generatedFeeText)
-                        canvasDivider
+                        // Sender's send fee — zero unless the send needed a
+                        // change swap. The receiver's redeem fee is shown on
+                        // their side, so a "0 sat" row here only misleads.
+                        if tokenFee > 0 {
+                            detailRow(icon: "arrow.up.arrow.down", label: "Fee", value: generatedFeeText)
+                            canvasDivider
+                        }
                         detailRow(icon: "banknote", label: "Unit", value: generatedTokenUnit.uppercased())
                         // Fiat conversion is only meaningful for sats; a non-sat
                         // account unit has no BTC-price equivalent.
@@ -742,8 +747,10 @@ struct SendView: View {
             : CurrencyAmount(value: generatedAmount, currency: generatedUnitCurrency).formatted()
         var rows: [PaymentStatusView.DetailRow] = [
             .init(icon: "bitcoinsign", label: "Amount", value: amountText),
-            .init(icon: "arrow.up.arrow.down", label: "Fee", value: generatedFeeText),
         ]
+        if tokenFee > 0 {
+            rows.append(.init(icon: "arrow.up.arrow.down", label: "Fee", value: generatedFeeText))
+        }
         if let mintURL = generatedTokenMintURL {
             rows.append(.init(
                 icon: "bitcoinsign.bank.building",
