@@ -694,13 +694,13 @@ struct SendView: View {
                             canvasDivider
                         }
                         detailRow(icon: "banknote", label: "Unit", value: generatedTokenUnit.uppercased())
-                        // Fiat conversion is only meaningful for sats; a non-sat
-                        // account unit has no BTC-price equivalent.
-                        if generatedIsSat {
+                        // Fiat conversion is only meaningful for sats, only when
+                        // the user opted into fiat balances, and only for amounts
+                        // worth at least a cent — matches Android's gating.
+                        if generatedIsSat, settings.showFiatBalance,
+                           let fiatValue = priceService.formatSatsAsFiat(generatedAmount) {
                             canvasDivider
-                            detailRow(icon: "banknote", label: "Fiat",
-                                      value: priceService.btcPriceUSD > 0
-                                          ? priceService.formatSatsAsFiat(generatedAmount) : "—")
+                            detailRow(icon: "banknote", label: "Fiat", value: fiatValue)
                         }
                         if let mintURL = generatedTokenMintURL {
                             canvasDivider
