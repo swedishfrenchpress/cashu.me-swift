@@ -86,6 +86,7 @@ import com.cashu.me.ui.components.AmountEntryHero
 import com.cashu.me.ui.components.AmountText
 import com.cashu.me.ui.components.CanvasDivider
 import com.cashu.me.ui.components.ExplorerLinkRow
+import com.cashu.me.ui.components.FlowSheetTitle
 import com.cashu.me.ui.components.IconSwap
 import com.cashu.me.ui.components.InlineNotice
 import com.cashu.me.ui.components.InspectorRow
@@ -1154,14 +1155,7 @@ private fun ReceiveMethodPickerSheet(
                 .padding(horizontal = CashuTheme.spacing.comfortable)
                 .navigationBarsPadding(),
         ) {
-            Text(
-                text = "Receive with",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(
-                    horizontal = CashuTheme.spacing.snug,
-                    vertical = CashuTheme.spacing.default,
-                ),
-            )
+            FlowSheetTitle(title = "Receive with")
             methods.forEach { kind ->
                 Row(
                     modifier = Modifier
