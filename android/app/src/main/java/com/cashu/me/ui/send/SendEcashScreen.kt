@@ -73,6 +73,7 @@ import com.cashu.me.Core.Protocols.CurrencyAmount
 import com.cashu.me.Core.Protocols.CurrencyRegistry
 import com.cashu.me.Core.SettingsManager
 import com.cashu.me.Core.UnitAmountEntry
+import com.cashu.me.Core.Wallet.isInsufficientBalance
 import com.cashu.me.Core.Wallet.userFacingWalletMessage
 import com.cashu.me.Core.WalletManager
 import com.cashu.me.Models.SendTokenResult
@@ -337,7 +338,17 @@ fun SendEcashScreen(
                                 face = SendFace.Generated(result, mintUrl, effectiveUnit, amountValue)
                                 amount = ""
                             } catch (t: Throwable) {
-                                errorText = t.userFacingWalletMessage
+                                errorText = if (t.isInsufficientBalance && amountValue <= mintBalance) {
+                                    // The balance covers the amount, but the
+                                    // swap that makes change for it carries a
+                                    // fee the remainder can't absorb — the
+                                    // plain "Not enough balance." reads as a
+                                    // wallet bug when the user typed exactly
+                                    // what the screen says they hold.
+                                    "Not enough balance to cover the mint fee. Try Send Max."
+                                } else {
+                                    t.userFacingWalletMessage
+                                }
                             } finally {
                                 sending = false
                             }

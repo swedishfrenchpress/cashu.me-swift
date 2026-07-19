@@ -15,6 +15,9 @@ struct SendView: View {
     @State private var errorMessage: String?
     @State private var errorSeverity: ErrorSeverity = .error
     @State private var errorShowsMintAction = false
+    // Optional second line under the error notice (e.g. the change-fee hint);
+    // overrides the generic insufficient-balance detail when set.
+    @State private var errorDetail: String?
     @State private var showMintPicker = false
     @State private var selectedSendMint: MintInfo?
 
@@ -225,7 +228,7 @@ struct SendView: View {
                     } else if let error = errorMessage {
                         sendInputNotice(
                             message: error,
-                            detail: errorShowsMintAction ? insufficientBalanceDetail : nil,
+                            detail: errorDetail ?? (errorShowsMintAction ? insufficientBalanceDetail : nil),
                             severity: errorSeverity
                         )
                     }
@@ -420,12 +423,29 @@ struct SendView: View {
 
     private func useMax(mint: MintInfo) {
         HapticFeedback.impact(.light)
+        // The gross balance is always sendable: sends don't include fees
+        // (TokenService includeFee: false), and a full-balance send matches
+        // the proof set exactly — no swap, no fee, also on fee-charging mints.
+        fillAmount(baseUnits: effectiveSendBalance)
+    }
+
+    /// Writes a base-unit amount into the keypad string in the current entry
+    /// mode. Fiat entry is coarser than sats, so the cents round-trip can land
+    /// above the target — which would leave a Send Max fill unsendable — and
+    /// gets trimmed a cent at a time until it fits.
+    private func fillAmount(baseUnits: UInt64) {
         if isSatSend {
             // Balance is sats; express it in the current entry unit so the keypad
             // string keeps its meaning.
-            amountString = AmountFormatter.entryConverted(raw: String(mint.balance), from: .sats, to: entryUnit)
+            amountString = AmountFormatter.entryConverted(raw: String(baseUnits), from: .sats, to: entryUnit)
+            guard entryUnit == .fiat else { return }
+            var cents = AmountFormatter.entryBaseUnits(raw: amountString, decimals: 2)
+            while cents > 0, AmountFormatter.entrySats(raw: amountString, unit: .fiat) > baseUnits {
+                cents -= 1
+                amountString = AmountFormatter.entryString(baseUnits: cents, decimals: 2)
+            }
         } else {
-            amountString = AmountFormatter.entryString(baseUnits: effectiveSendBalance, decimals: sendUnitDecimals)
+            amountString = AmountFormatter.entryString(baseUnits: baseUnits, decimals: sendUnitDecimals)
         }
     }
 
@@ -774,10 +794,11 @@ struct SendView: View {
         return "You have \(sendBalanceText) in \(mint.name)."
     }
 
-    private func presentError(_ message: String, severity: ErrorSeverity = .error, showsMintAction: Bool = false) {
+    private func presentError(_ message: String, severity: ErrorSeverity = .error, showsMintAction: Bool = false, detail: String? = nil) {
         errorMessage = message
         errorSeverity = severity
         errorShowsMintAction = showsMintAction
+        errorDetail = detail
     }
 
     private func extractMintHost(_ url: String) -> String {
@@ -820,11 +841,23 @@ struct SendView: View {
                 HapticFeedback.notification(.success)
             } catch {
                 let walletMessage = error.walletMessage
-                presentError(
-                    walletMessage.text,
-                    severity: walletMessage.severity,
-                    showsMintAction: error.isInsufficientBalanceError
-                )
+                if error.isInsufficientBalanceError, amount <= effectiveSendBalance {
+                    // The balance covers the amount, but the swap that makes
+                    // change for it carries a fee the remainder can't absorb —
+                    // the plain "Not enough balance." reads as a wallet bug when
+                    // the user typed exactly what the screen says they hold.
+                    presentError(
+                        "Not enough balance to cover the mint fee.",
+                        severity: .caution,
+                        detail: "The mint charges a fee to make change for this amount. Try Send Max."
+                    )
+                } else {
+                    presentError(
+                        walletMessage.text,
+                        severity: walletMessage.severity,
+                        showsMintAction: error.isInsufficientBalanceError
+                    )
+                }
                 HapticFeedback.notification(.error)
             }
             isGenerating = false
