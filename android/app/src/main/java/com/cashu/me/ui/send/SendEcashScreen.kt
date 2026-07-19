@@ -85,6 +85,7 @@ import com.cashu.me.ui.components.MintPickerSheet
 import com.cashu.me.ui.components.MintSelectorRow
 import com.cashu.me.ui.components.NumberPadFooter
 import com.cashu.me.ui.components.PrimaryButton
+import com.cashu.me.ui.components.neutralActionButtonColors
 import com.cashu.me.ui.components.QrCard
 import com.cashu.me.ui.components.SheetHeader
 import com.cashu.me.ui.components.TwoFaceScreen
@@ -673,66 +674,78 @@ private fun GeneratedFace(
         return
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                horizontal = CashuTheme.spacing.comfortable,
-                vertical = CashuTheme.spacing.comfortable,
-            ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
-    ) {
-        QrCard(
-            content = result.token,
-            shareSubject = "Cashu token",
-        )
-        Text(
-            text = amountLabel,
-            style = MaterialTheme.typography.headlineMedium.withMonoDigits(),
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        ClaimStatusRow(claimState = claimState)
-        // Detail rows: Fee -> Unit -> Fiat (sat-only) -> Mint (iOS order).
-        Column(modifier = Modifier.fillMaxWidth()) {
-            if (result.fee > 0L) {
-                com.cashu.me.ui.components.InspectorRow(
-                    label = "Fee",
-                    value = if (unit.equals("sat", ignoreCase = true)) {
-                        "${result.fee} sat"
-                    } else {
-                        CurrencyAmount(result.fee, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
-                    },
-                    valueMonospaced = true,
-                )
-                com.cashu.me.ui.components.CanvasDivider(leadingInset = 16.dp)
-            }
-            com.cashu.me.ui.components.InspectorRow(
-                label = "Unit",
-                value = unit.uppercase(),
+    // Scroll region + pinned footer, mirroring iOS (ScrollView with the Copy
+    // button outside it) and TransactionDetailScreen's Copy action.
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    horizontal = CashuTheme.spacing.comfortable,
+                    vertical = CashuTheme.spacing.comfortable,
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(CashuTheme.spacing.loose),
+        ) {
+            QrCard(
+                content = result.token,
+                shareSubject = "Cashu token",
             )
-            if (fiatLabel != null) {
+            Text(
+                text = amountLabel,
+                style = MaterialTheme.typography.headlineMedium.withMonoDigits(),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            ClaimStatusRow(claimState = claimState)
+            // Detail rows: Fee -> Unit -> Fiat (sat-only) -> Mint (iOS order).
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (result.fee > 0L) {
+                    com.cashu.me.ui.components.InspectorRow(
+                        label = "Fee",
+                        value = if (unit.equals("sat", ignoreCase = true)) {
+                            "${result.fee} sat"
+                        } else {
+                            CurrencyAmount(result.fee, CurrencyRegistry.currencyForMintUnit(unit)).formatted()
+                        },
+                        valueMonospaced = true,
+                    )
+                    com.cashu.me.ui.components.CanvasDivider(leadingInset = 16.dp)
+                }
+                com.cashu.me.ui.components.InspectorRow(
+                    label = "Unit",
+                    value = unit.uppercase(),
+                )
+                if (fiatLabel != null) {
+                    com.cashu.me.ui.components.CanvasDivider(leadingInset = 16.dp)
+                    com.cashu.me.ui.components.InspectorRow(
+                        label = "Fiat",
+                        value = fiatLabel,
+                        valueMonospaced = true,
+                    )
+                }
                 com.cashu.me.ui.components.CanvasDivider(leadingInset = 16.dp)
                 com.cashu.me.ui.components.InspectorRow(
-                    label = "Fiat",
-                    value = fiatLabel,
-                    valueMonospaced = true,
+                    label = "Mint",
+                    value = com.cashu.me.Core.shortenMintUrl(mintUrl),
                 )
             }
-            com.cashu.me.ui.components.CanvasDivider(leadingInset = 16.dp)
-            com.cashu.me.ui.components.InspectorRow(
-                label = "Mint",
-                value = com.cashu.me.Core.shortenMintUrl(mintUrl),
-            )
         }
-        Spacer(modifier = Modifier.height(CashuTheme.spacing.micro))
+        // Gray tonal fill instead of the inverted-ink primary — the analog of
+        // iOS's non-prominent glass capsule; adapts to light/dark.
         PrimaryButton(
             text = if (copied) "Copied" else "Copy",
             onClick = {
                 clipboard.setText(AnnotatedString(result.token))
                 copied = true
             },
+            colors = neutralActionButtonColors(),
+            modifier = Modifier.padding(
+                start = CashuTheme.spacing.comfortable,
+                end = CashuTheme.spacing.comfortable,
+                top = CashuTheme.spacing.micro,
+            ),
         )
         Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
