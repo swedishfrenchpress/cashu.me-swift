@@ -19,11 +19,10 @@ struct PressableButtonStyle: ButtonStyle {
 
 /// One round glass icon button with a one-word caption on the canvas below it —
 /// the shared "method" button used by both the Send and Receive sheets
-/// (Scan · Ecash · Tap / Scan · Ecash · Bitcoin). On iOS 26, the configurable
-/// native glass button style retains the system-owned inset and interaction,
-/// while a subtle adaptive tint keeps it distinct from the sheet's own glass
-/// without turning three peer actions into prominent filled controls. iOS 18–25
-/// falls back to a `.quaternary` circle. Wrap a row in a
+/// (Scan · Ecash · Tap / Scan · Ecash · Bitcoin). On iOS 26 this is the plain
+/// system `.glass` button style — untinted, matching the home Receive/Send
+/// pills and the input field's glass — with the system-owned inset and
+/// interaction. iOS 18–25 falls back to a `.quaternary` circle. Wrap a row in a
 /// `GlassEffectContainer(spacing:)` on iOS 26 so the adjacent circular glass
 /// surfaces sample light consistently (glass can't sample other glass).
 struct CircularGlassIconButton: View {
@@ -41,7 +40,7 @@ struct CircularGlassIconButton: View {
                         .foregroundStyle(.primary)
                         .frame(width: 64, height: 64)
                 }
-                .buttonStyle(.glass(.regular.tint(Color.primary.opacity(0.15))))
+                .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
             } else {
                 Button(action: action) {
