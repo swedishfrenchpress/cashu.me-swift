@@ -27,18 +27,32 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cashu.me.ui.theme.rememberReducedMotion
 import com.cashu.me.ui.theme.CashuTheme
 
-// Matches iOS NativeEmptyState's 56pt glyph (component-level, not on the
-// spacing scale).
-private val EmptyStateIconSize = 56.dp
 // iOS renders the glyph hierarchically at 0.62 opacity; dim the tint the same
 // amount so the icon sits behind the text instead of competing with it.
 private const val EmptyStateIconAlpha = 0.62f
 private const val EmptyStateActionWidthFraction = 0.7f
+
+/**
+ * Size variants mirroring iOS NativeEmptyState.Style. Dimensions are the iOS
+ * point values, deliberately off the spacing scale. (iOS also has a smaller
+ * `.compact`; add it here when an Android call site needs one.)
+ */
+enum class EmptyStateSize(
+    internal val iconSize: Dp,
+    internal val iconGap: Dp,
+) {
+    /** Full-tab empty trays (Home, History): 56dp glyph, title2-scale text. */
+    FullScreen(iconSize = 56.dp, iconGap = 12.dp),
+
+    /** Content-fit hosts like the Send sheet: 42dp glyph, headline-scale text. */
+    Section(iconSize = 42.dp, iconGap = 10.dp),
+}
 // iOS NativeEmptyState entrance: opacity 0→1, scale 0.96→1, rise from 8pt.
 private const val EntranceInitialScale = 0.96f
 private val EntranceRise = 8.dp
@@ -54,6 +68,8 @@ private const val EntranceDamping = 0.82f
  * @param fillHeight when true (default), expands to fill the parent and
  *   centers its content — home/history empty trays. Set false for wrap-content
  *   hosts like a content-fit Send bottom sheet.
+ * @param size glyph/text scale; [EmptyStateSize.Section] matches the smaller
+ *   iOS `.section` style used inside sheets.
  */
 @Composable
 fun EmptyState(
@@ -64,6 +80,7 @@ fun EmptyState(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
     fillHeight: Boolean = true,
+    size: EmptyStateSize = EmptyStateSize.FullScreen,
 ) {
     val reduceMotion = rememberReducedMotion()
     var appeared by remember { mutableStateOf(false) }
@@ -104,17 +121,25 @@ fun EmptyState(
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = EmptyStateIconAlpha),
             modifier = Modifier
-                .size(EmptyStateIconSize)
+                .size(size.iconSize)
                 .graphicsLayer {
                     scaleX = iconBounce
                     scaleY = iconBounce
                 },
         )
-        Spacer(Modifier.height(CashuTheme.spacing.default))
+        Spacer(Modifier.height(size.iconGap))
         Text(
             text = title,
-            // iOS title2 semibold (22pt); titleLarge is 22sp but ships Normal.
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+            // iOS title2/headline semibold; the M3 roles ship lighter weights.
+            style = when (size) {
+                EmptyStateSize.FullScreen ->
+                    MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
+                EmptyStateSize.Section ->
+                    MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.sp,
+                    )
+            },
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
         )
@@ -122,9 +147,14 @@ fun EmptyState(
             Spacer(Modifier.height(CashuTheme.spacing.micro))
             Text(
                 text = supporting,
-                // iOS body (17pt) with SF's near-zero tracking; bodyLarge's
-                // default 0.5sp letter spacing reads looser than the iOS twin.
-                style = MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp),
+                // iOS body/subheadline with SF's near-zero tracking; the M3
+                // roles' default letter spacing reads looser than the iOS twin.
+                style = when (size) {
+                    EmptyStateSize.FullScreen ->
+                        MaterialTheme.typography.bodyLarge.copy(letterSpacing = 0.sp)
+                    EmptyStateSize.Section ->
+                        MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp)
+                },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
